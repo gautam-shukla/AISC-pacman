@@ -2,6 +2,7 @@
 settings.py - Global constants, configurations, and color definitions.
 """
 from enum import Enum, auto
+from typing import List
 
 
 class GameMode(Enum):
@@ -44,12 +45,7 @@ class Direction:
 
 # Tile dimensions and grid
 TILE_SIZE = 32
-GRID_COLS = 21
-GRID_ROWS = 21
 HUD_HEIGHT = 64
-
-SCREEN_WIDTH = GRID_COLS * TILE_SIZE
-SCREEN_HEIGHT = (GRID_ROWS * TILE_SIZE) + HUD_HEIGHT
 FPS = 60
 
 # Speeds (pixels per frame at 60 FPS)
@@ -57,6 +53,24 @@ FPS = 60
 PACMAN_SPEED = 3.5
 GHOST_SPEED = 2.5
 POWER_PELLET_DURATION = 60 * 8
+
+# Dynamic difficulty and respawn tuning
+DIFFICULTY_MIN = 0.75
+DIFFICULTY_MAX = 1.35
+DIFFICULTY_STEP = 0.04
+DIFFICULTY_EVALUATION_FRAMES = FPS * 10
+DIFFICULTY_EMA_ALPHA = 0.5
+DIFFICULTY_EASY_THRESHOLD = 0.96
+DIFFICULTY_HARD_THRESHOLD = 1.06
+RESPAWN_PAUSE_TICKS = 30
+RESPAWN_INVULNERABILITY_TICKS = FPS * 2
+GHOST_PROXIMITY_RANGE_TILES = 8
+GHOST_PROXIMITY_SPEED_BONUS = 0.2
+GHOST_LOW_LIVES_SPEED_REDUCTION = 0.03
+GHOST_MAX_LIVES_SPEED_REDUCTION = 0.06
+GHOST_GUARD_CHASE_RANGE = 5
+GHOST_SEARCH_RANGE = 7
+MAZE_EXPANSION_MARGIN = 2
 
 # Gameplay rules
 INITIAL_LIVES = 3
@@ -86,7 +100,7 @@ COLOR_GHOST_FLEE = (50, 70, 240)
 COLOR_GHOST_EYES = (255, 255, 255)
 COLOR_GHOST_PUPIL = (30, 40, 180)
 
-# Default baseline 21x21 maze layout
+# Default baseline 21x21 maze layout, expanded with an outer collectible corridor.
 # Legend:
 # '#' = Wall
 # '.' = Dot
@@ -95,7 +109,7 @@ COLOR_GHOST_PUPIL = (30, 40, 180)
 # 'P' = Pac-Man Spawn
 # 'G' = Ghost Spawn
 # '=' = Ghost gate / barrier (walkable by ghost, solid to pacman initially)
-DEFAULT_MAZE = [
+_BASE_MAZE = [
     "#####################",
     "#.........#.........#",
     "#.###.###.#.###.###.#",
@@ -118,3 +132,42 @@ DEFAULT_MAZE = [
     "#.#################.#",
     "#####################",
 ]
+
+
+def _expand_maze(layout: List[str], margin: int) -> List[str]:
+    """Add a connected, collectible perimeter corridor around the base maze."""
+    rows = len(layout)
+    cols = len(layout[0])
+    expanded = [["#"] * (cols + margin * 2) for _ in range(rows + margin * 2)]
+
+    for row, line in enumerate(layout):
+        for col, tile in enumerate(line):
+            expanded[row + margin][col + margin] = tile
+
+    last_col = cols + margin - 1
+    last_row = rows + margin - 1
+    for col in range(margin - 1, last_col + 1):
+        expanded[margin - 1][col] = "."
+        expanded[last_row][col] = "."
+    for row in range(margin - 1, last_row + 1):
+        expanded[row][margin - 1] = "."
+        expanded[row][last_col] = "."
+
+    # Four doorways connect the new perimeter to the original maze.
+    gates = (
+        (margin + cols // 2, margin),
+        (margin + cols // 2, margin + rows - 1),
+        (margin, margin + rows // 2),
+        (margin + cols - 1, margin + rows // 2),
+    )
+    for col, row in gates:
+        expanded[row][col] = "."
+
+    return ["".join(row) for row in expanded]
+
+
+DEFAULT_MAZE = _expand_maze(_BASE_MAZE, margin=MAZE_EXPANSION_MARGIN)
+GRID_COLS = len(DEFAULT_MAZE[0])
+GRID_ROWS = len(DEFAULT_MAZE)
+SCREEN_WIDTH = GRID_COLS * TILE_SIZE
+SCREEN_HEIGHT = (GRID_ROWS * TILE_SIZE) + HUD_HEIGHT
