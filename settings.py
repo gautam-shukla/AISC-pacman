@@ -12,6 +12,20 @@ class GameMode(Enum):
     VICTORY = auto()
 
 
+class GhostType(Enum):
+    HUNTER = auto()
+    AMBUSHER = auto()
+    PATROL = auto()
+    GUARD = auto()
+
+
+class GhostState(Enum):
+    CHASE = auto()
+    PATROL = auto()
+    FLEE = auto()
+    SEARCH = auto()
+
+
 class Direction:
     NONE = (0, 0)
     UP = (0, -1)
@@ -42,6 +56,7 @@ FPS = 60
 # 4.0 pixels/frame allows cleanly dividing 32px tiles
 PACMAN_SPEED = 4.0
 GHOST_SPEED = 3.0
+POWER_PELLET_DURATION = 60 * 8
 
 # Gameplay rules
 INITIAL_LIVES = 3
@@ -91,7 +106,7 @@ DEFAULT_MAZE = [
     "#.###.#.#####.#.###.#",
     "#.....#...#...#.....#",
     "#####.### # ###.#####",
-    "    #.#   G   #.#    ",
+    "    #.# GGGG  #.#    ",
     "#####.# ##### #.#####",
     "#.........#.........#",
     "#.###.###.#.###.###.#",
