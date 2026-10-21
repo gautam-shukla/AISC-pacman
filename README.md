@@ -44,6 +44,9 @@ The game is designed with a strict separation of concerns:
 
 - **Procedural Retro Arcade Aesthetics**: Full vector rendering of classic maze walls, animated Pac-Man chomping, skirted ghosts with directional pupils, pulsing power pellets, and retro HUD overlays.
 - **Collision & Movement System**: Grid-based spatial checks preventing wall penetration while allowing seamless 180° reversals and smooth corner turns.
+- **Adaptive Difficulty**: A bounded, smoothed performance controller gradually adjusts ghost speed and pursuit range; the current tier is shown in the HUD.
+- **Expanded Maze**: The 21×21 base maze is surrounded by a connected collectible corridor, producing a 25×25 playable grid sized to fit the display.
+- **Safe Respawning**: Losing a life preserves score and maze progress, resets entity positions, and provides a pause plus brief collision immunity.
 - **Configurable Maze Environments**: JSON-based level configurations supporting dynamic obstacles, keys, switches, and ghost gates.
 - **Multi-Modal Game State**: Robust state transitions (`MENU`, `PLAYING`, `PAUSED`, `GAME_OVER`, `VICTORY`).
 

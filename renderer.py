@@ -90,6 +90,11 @@ class Renderer:
         progress_text = self.font_sub.render(f"DOTS: {dots_left}/{total_dots}", True, COLOR_TEXT_DIM)
         self.screen.blit(progress_text, (SCREEN_WIDTH // 2 - progress_text.get_width() // 2, 36))
 
+        difficulty_label = self.font_sub.render(
+            f"DIFFICULTY: {state.difficulty_label}", True, COLOR_TEXT_DIM
+        )
+        self.screen.blit(difficulty_label, (20, 38))
+
         # Lives icon representation
         lives_label = self.font_hud.render("LIVES:", True, COLOR_TEXT)
         self.screen.blit(lives_label, (SCREEN_WIDTH - 170, 12))

@@ -14,8 +14,17 @@ from settings import (
     COLOR_GHOST_PINK,
     COLOR_GHOST_RED,
     GHOST_SPEED,
+    GHOST_PROXIMITY_RANGE_TILES,
+    GHOST_PROXIMITY_SPEED_BONUS,
+    GHOST_LOW_LIVES_SPEED_REDUCTION,
+    GHOST_MAX_LIVES_SPEED_REDUCTION,
+    GHOST_GUARD_CHASE_RANGE,
+    GHOST_SEARCH_RANGE,
+    INITIAL_LIVES,
     TILE_SIZE,
     Direction,
+    DIFFICULTY_MIN,
+    DIFFICULTY_MAX,
     GhostState,
     GhostType,
 )
@@ -100,7 +109,9 @@ class Ghost:
                 targets.append(nearest)
         return targets or [walkable[0]]
 
-    def _target_for_player(self, maze: Maze, pacman: Pacman) -> Tile:
+    def _target_for_player(
+        self, maze: Maze, pacman: Pacman, difficulty_multiplier: float
+    ) -> Tile:
         player_tile = (pacman.col, pacman.row)
         self.last_seen_player = player_tile
 
@@ -123,13 +134,13 @@ class Ghost:
         distance = self._manhattan((self.col, self.row), player_tile)
 
         if self.ghost_type == GhostType.GUARD:
-            if distance <= 5:
+            if distance <= GHOST_GUARD_CHASE_RANGE * difficulty_multiplier:
                 self.state = GhostState.CHASE
                 return player_tile
             self.state = GhostState.PATROL
             return patrol_target
 
-        if distance <= 7:
+        if distance <= GHOST_SEARCH_RANGE * difficulty_multiplier:
             self.state = GhostState.SEARCH
             return player_tile
         self.state = GhostState.PATROL
@@ -178,22 +189,22 @@ class Ghost:
         pacman: Optional[Pacman] = None,
         player_lives: int = 3,
         protection: float = 0.0,
+        difficulty_multiplier: float = 1.0,
     ) -> None:
-        """Update ghost movement; ``protection`` is a 0-1 power duration ratio."""
-        current_col = int(self.x // TILE_SIZE)
-        current_row = int(self.y // TILE_SIZE)
-        center_x = (current_col + 0.5) * TILE_SIZE
-        center_y = (current_row + 0.5) * TILE_SIZE
+        """Update ghost movement; protection and difficulty are normalized ratios."""
+        difficulty_multiplier = min(
+            DIFFICULTY_MAX, max(DIFFICULTY_MIN, difficulty_multiplier)
+        )
+        center_x = (self.col + 0.5) * TILE_SIZE
+        center_y = (self.row + 0.5) * TILE_SIZE
         at_center = (
-            abs(self.x - center_x) <= self.speed / 2
-            and abs(self.y - center_y) <= self.speed / 2
+            abs(self.x - center_x) < 0.01
+            and abs(self.y - center_y) < 0.01
         )
 
         if at_center:
             self.x = center_x
             self.y = center_y
-            self.col = current_col
-            self.row = current_row
 
             if pacman is None:
                 legal = self.get_legal_directions(self.col, self.row, maze)
@@ -205,7 +216,9 @@ class Ghost:
                 self.speed = GHOST_SPEED
             else:
                 player_tile = (pacman.col, pacman.row)
-                target = self._target_for_player(maze, pacman)
+                target = self._target_for_player(
+                    maze, pacman, difficulty_multiplier
+                )
                 if (
                     self.ghost_type in (GhostType.PATROL, GhostType.GUARD)
                     and self.state == GhostState.PATROL
@@ -221,9 +234,21 @@ class Ghost:
                 else:
                     self.color = self.base_color
                 distance = self._manhattan((self.col, self.row), player_tile)
-                life_pressure = max(0, 2 - player_lives) / 20
-                self.speed = GHOST_SPEED * (
-                    1.0 + max(0, 8 - distance) / 40 + life_pressure
+                proximity_bonus = (
+                    max(0, GHOST_PROXIMITY_RANGE_TILES - distance)
+                    / GHOST_PROXIMITY_RANGE_TILES
+                    * GHOST_PROXIMITY_SPEED_BONUS
+                )
+                lives_relief = min(
+                    max(0, INITIAL_LIVES - player_lives)
+                    * GHOST_LOW_LIVES_SPEED_REDUCTION,
+                    GHOST_MAX_LIVES_SPEED_REDUCTION,
+                )
+                self.speed = (
+                    GHOST_SPEED
+                    * (1.0 + proximity_bonus)
+                    * (1.0 - lives_relief)
+                    * difficulty_multiplier
                 )
                 self._choose_direction(maze, pacman, frightened, target)
 
@@ -236,19 +261,28 @@ class Ghost:
 
         dx, dy = self.current_dir
         if dx or dy:
-            target_x = self.x + dx * self.speed
-            target_y = self.y + dy * self.speed
-            next_col = int(target_x // TILE_SIZE)
-            next_row = int(target_y // TILE_SIZE)
-            if maze.is_walkable(next_col, next_row):
-                self.x = target_x
-                self.y = target_y
-            else:
-                self.x = center_x
-                self.y = center_y
+            next_col = self.col + dx
+            next_row = self.row + dy
+            if not maze.is_walkable(next_col, next_row):
+                self.current_dir = Direction.NONE
+                return
 
-        self.col = int(self.x // TILE_SIZE)
-        self.row = int(self.y // TILE_SIZE)
+            destination_x = (next_col + 0.5) * TILE_SIZE
+            destination_y = (next_row + 0.5) * TILE_SIZE
+            if dx:
+                distance_to_center = abs(destination_x - self.x)
+                step = min(self.speed, distance_to_center)
+                self.x += dx * step
+                if step >= distance_to_center:
+                    self.x = destination_x
+                    self.col = next_col
+            else:
+                distance_to_center = abs(destination_y - self.y)
+                step = min(self.speed, distance_to_center)
+                self.y += dy * step
+                if step >= distance_to_center:
+                    self.y = destination_y
+                    self.row = next_row
 
     def get_rect(self) -> pygame.Rect:
         """Return the bounding rectangle used for ghost collisions."""
@@ -274,4 +308,5 @@ class Ghost:
         self.color = self.base_color
         self.speed = GHOST_SPEED
         self.patrol_index = 0
+        self.patrol_targets = []
         self.last_seen_player = None
