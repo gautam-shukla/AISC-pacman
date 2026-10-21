@@ -1,7 +1,6 @@
 """
 pacman.py - Player entity with responsive grid navigation and mouth animation.
 """
-import math
 from typing import Tuple
 import pygame
 from settings import (
@@ -42,77 +41,54 @@ class Pacman:
         self.next_dir = direction
 
     def update(self, maze: Maze) -> None:
-        """Updates position, handles turns, and prevents moving into walls."""
-        # 1. Immediate reversal check
-        if self.next_dir == Direction.OPPOSITES.get(self.current_dir):
-            self.current_dir = self.next_dir
+        """Move between tile centers; turns and wall checks occur at boundaries."""
+        center_x = (self.col + 0.5) * TILE_SIZE
+        center_y = (self.row + 0.5) * TILE_SIZE
+        at_center = abs(self.x - center_x) < 0.01 and abs(self.y - center_y) < 0.01
 
-        # Current center of the tile Pac-Man is currently in
-        current_col = int(self.x // TILE_SIZE)
-        current_row = int(self.y // TILE_SIZE)
-        tile_center_x = (current_col + 0.5) * TILE_SIZE
-        tile_center_y = (current_row + 0.5) * TILE_SIZE
-
-        dist_to_center_x = self.x - tile_center_x
-        dist_to_center_y = self.y - tile_center_y
-
-        # Snap tolerance for turning into perpendicular corridors
-        snap_threshold = self.speed * 1.5
-
-        # 2. Check if we can execute the buffered next_dir
-        if self.next_dir != Direction.NONE and self.next_dir != self.current_dir:
-            ndx, ndy = self.next_dir
-            # Perpendicular turn check
-            if (ndx != 0 and abs(dist_to_center_y) <= snap_threshold) or \
-               (ndy != 0 and abs(dist_to_center_x) <= snap_threshold):
-                target_col = current_col + ndx
-                target_row = current_row + ndy
-                if maze.is_walkable(target_col, target_row):
-                    # Snap to tile center along the perpendicular axis
-                    if ndx != 0:
-                        self.y = tile_center_y
-                    if ndy != 0:
-                        self.x = tile_center_x
+        if at_center:
+            if self.next_dir != Direction.NONE:
+                next_col = self.col + self.next_dir[0]
+                next_row = self.row + self.next_dir[1]
+                if maze.is_walkable(next_col, next_row):
                     self.current_dir = self.next_dir
+            dx, dy = self.current_dir
+            if dx or dy:
+                next_col = self.col + dx
+                next_row = self.row + dy
+                if not maze.is_walkable(next_col, next_row):
+                    self.current_dir = Direction.NONE
 
-        # 3. Attempt movement in current direction
-        cdx, cdy = self.current_dir
-        if cdx != 0 or cdy != 0:
-            target_x = self.x + (cdx * self.speed)
-            target_y = self.y + (cdy * self.speed)
+        dx, dy = self.current_dir
+        if not (dx or dy):
+            return
 
-            # Check collision with wall in current direction
-            next_col = int(target_x // TILE_SIZE)
-            next_row = int(target_y // TILE_SIZE)
+        next_col = self.col + dx
+        next_row = self.row + dy
+        if not maze.is_walkable(next_col, next_row):
+            self.current_dir = Direction.NONE
+            return
 
-            # Lookahead check when crossing the tile center boundary
-            heading_into_wall = False
-            if cdx > 0 and (target_x > tile_center_x) and maze.is_wall(current_col + 1, current_row):
-                heading_into_wall = True
-            elif cdx < 0 and (target_x < tile_center_x) and maze.is_wall(current_col - 1, current_row):
-                heading_into_wall = True
-            elif cdy > 0 and (target_y > tile_center_y) and maze.is_wall(current_col, current_row + 1):
-                heading_into_wall = True
-            elif cdy < 0 and (target_y < tile_center_y) and maze.is_wall(current_col, current_row - 1):
-                heading_into_wall = True
+        destination_x = (next_col + 0.5) * TILE_SIZE
+        destination_y = (next_row + 0.5) * TILE_SIZE
+        if dx:
+            remaining = abs(destination_x - self.x)
+            step = min(self.speed, remaining)
+            self.x += dx * step
+            if step >= remaining:
+                self.x = destination_x
+                self.col = next_col
+                self.row = next_row
+        else:
+            remaining = abs(destination_y - self.y)
+            step = min(self.speed, remaining)
+            self.y += dy * step
+            if step >= remaining:
+                self.y = destination_y
+                self.col = next_col
+                self.row = next_row
 
-            if heading_into_wall:
-                # Stop smoothly at tile center
-                if cdx != 0:
-                    self.x = tile_center_x
-                if cdy != 0:
-                    self.y = tile_center_y
-                self.current_dir = Direction.NONE
-            else:
-                self.x = target_x
-                self.y = target_y
-
-            # Update tile coordinates
-            self.col = int(self.x // TILE_SIZE)
-            self.row = int(self.y // TILE_SIZE)
-
-            # Animate mouth only while moving
-            self._animate_mouth()
+        self._animate_mouth()
 
     def _animate_mouth(self) -> None:
         """Oscillates the mouth opening angle for classic chomp animation."""

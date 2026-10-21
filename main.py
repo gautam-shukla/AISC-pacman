@@ -9,7 +9,7 @@ from settings import (
     SCREEN_HEIGHT,
     FPS,
     Direction,
-    GameMode,
+    MINIMAX_SEARCH_DEPTH,
 )
 from game_state import GameState
 from renderer import Renderer
@@ -19,7 +19,25 @@ def main():
     parser = argparse.ArgumentParser(description="AI Pac-Man: The Adaptive Maze Challenge")
     parser.add_argument("--headless", action="store_true", help="Run without opening an OS window")
     parser.add_argument("--frames", type=int, default=0, help="Exit after N frames (useful for smoke tests)")
+    parser.add_argument(
+        "--ai",
+        action="store_true",
+        help="Use autonomous A*, Minimax, and Q-learning Pac-Man",
+    )
+    parser.add_argument(
+        "--minimax-depth",
+        type=int,
+        default=MINIMAX_SEARCH_DEPTH,
+        help="AI lookahead depth in Pac-Man turns (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--ai-debug",
+        action="store_true",
+        help="Print AI target, candidate scores, chosen move, and pruning counts",
+    )
     args = parser.parse_args()
+    if args.minimax_depth < 1:
+        parser.error("--minimax-depth must be at least 1")
 
     # Initialize Pygame
     pygame.init()
@@ -28,7 +46,11 @@ def main():
     screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
     clock = pygame.time.Clock()
 
-    game_state = GameState()
+    game_state = GameState(
+        ai_enabled=args.ai,
+        minimax_depth=args.minimax_depth,
+        ai_debug=args.ai_debug,
+    )
     renderer = Renderer(screen)
 
     running = True
@@ -50,14 +72,14 @@ def main():
                     game_state.toggle_pause()
                 elif event.key == pygame.K_r:
                     game_state.restart_game()
-                # Direction controls (Arrow keys + WASD)
-                elif event.key in (pygame.K_UP, pygame.K_w):
+                # Direction controls (Arrow keys + WASD) are reserved for manual play.
+                elif not game_state.ai_enabled and event.key in (pygame.K_UP, pygame.K_w):
                     game_state.pacman.set_next_direction(Direction.UP)
-                elif event.key in (pygame.K_DOWN, pygame.K_s):
+                elif not game_state.ai_enabled and event.key in (pygame.K_DOWN, pygame.K_s):
                     game_state.pacman.set_next_direction(Direction.DOWN)
-                elif event.key in (pygame.K_LEFT, pygame.K_a):
+                elif not game_state.ai_enabled and event.key in (pygame.K_LEFT, pygame.K_a):
                     game_state.pacman.set_next_direction(Direction.LEFT)
-                elif event.key in (pygame.K_RIGHT, pygame.K_d):
+                elif not game_state.ai_enabled and event.key in (pygame.K_RIGHT, pygame.K_d):
                     game_state.pacman.set_next_direction(Direction.RIGHT)
 
         # Update simulation logic
@@ -69,6 +91,7 @@ def main():
 
         clock.tick(FPS)
 
+    game_state.save_ai()
     pygame.quit()
     sys.exit(0)
 
