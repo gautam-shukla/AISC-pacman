@@ -54,8 +54,8 @@ FPS = 60
 
 # Speeds (pixels per frame at 60 FPS)
 # 4.0 pixels/frame allows cleanly dividing 32px tiles
-PACMAN_SPEED = 4.0
-GHOST_SPEED = 3.0
+PACMAN_SPEED = 3.5
+GHOST_SPEED = 2.5
 POWER_PELLET_DURATION = 60 * 8
 
 # Gameplay rules
