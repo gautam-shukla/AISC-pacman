@@ -47,6 +47,7 @@ The game is designed with a strict separation of concerns:
 - **Adaptive Difficulty**: A bounded, smoothed performance controller gradually adjusts ghost speed and pursuit range; the current tier is shown in the HUD.
 - **Expanded Maze**: The 21×21 base maze is surrounded by a connected collectible corridor, producing a 25×25 playable grid sized to fit the display.
 - **Safe Respawning**: Losing a life preserves score and maze progress, resets entity positions, and provides a pause plus brief collision immunity.
+- **Autonomous Pac-Man**: `--ai` combines risk-weighted A* pellet routing with configurable Minimax and alpha-beta pruning against ghost responses. Tabular Q-learning persists experience and breaks ties among the strongest Minimax moves. Rewards encourage collecting dots and power pellets and surviving; danger, trapped dead ends, and life loss are penalized.
 - **Configurable Maze Environments**: JSON-based level configurations supporting dynamic obstacles, keys, switches, and ghost gates.
 - **Multi-Modal Game State**: Robust state transitions (`MENU`, `PLAYING`, `PAUSED`, `GAME_OVER`, `VICTORY`).
 
@@ -168,6 +169,12 @@ To launch the desktop game:
 ```powershell
 python main.py
 ```
+
+To run autonomous Pac-Man with risk-aware A*, Minimax, alpha-beta pruning, and persistent Q-learning:
+```powershell
+python main.py --ai
+```
+The learned Q-table is stored in `~/.aisc_pacman/q_table.json`. Use `--minimax-depth N` to configure the lookahead and `--ai-debug` to print the chosen pellet target, candidate scores, chosen direction, and pruning counts. Normal play remains manual.
 
 ### Command-Line Arguments
 - Run headless smoke tests:

@@ -84,6 +84,7 @@ def test_pacman_wall_collision(game_state):
 def test_pacman_eats_dot_and_scores(game_state):
     """Pac-Man collects dots, increments score, and decrements dots remaining."""
     pacman = game_state.pacman
+    game_state.ghosts.clear()
     initial_dots = game_state.maze.remaining_dots_count()
     initial_score = game_state.score
 

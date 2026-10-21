@@ -91,7 +91,9 @@ class Renderer:
         self.screen.blit(progress_text, (SCREEN_WIDTH // 2 - progress_text.get_width() // 2, 36))
 
         difficulty_label = self.font_sub.render(
-            f"DIFFICULTY: {state.difficulty_label}", True, COLOR_TEXT_DIM
+            f"{'AI' if state.ai_enabled else 'MANUAL'} | DIFFICULTY: {state.difficulty_label}",
+            True,
+            COLOR_TEXT_DIM,
         )
         self.screen.blit(difficulty_label, (20, 38))
 
