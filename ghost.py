@@ -10,7 +10,21 @@ from settings import (
     COLOR_GHOST_RED,
     Direction,
 )
+<<<<<<< Updated upstream
 from maze import Maze
+=======
+
+
+
+
+
+GHOST_COLORS = {
+    GhostType.HUNTER: COLOR_GHOST_RED,
+    GhostType.AMBUSHER: COLOR_GHOST_PINK,
+    GhostType.PATROL: COLOR_GHOST_CYAN,
+    GhostType.GUARD: COLOR_GHOST_ORANGE,
+}
+>>>>>>> Stashed changes
 
 
 class Ghost:
