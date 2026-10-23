@@ -22,12 +22,15 @@ from settings import (
     DIFFICULTY_EVALUATION_FRAMES,
     POWER_PELLET_POINTS,
     RESPAWN_INVULNERABILITY_TICKS,
+    LEVEL_TRANSITION_TICKS,
     TILE_SIZE,
 )
 from maze import Maze
 from pacman import Pacman
 from ghost import Ghost
 from game_state import GameState
+from level_manager import LEVEL_TWO_LAYOUT
+from pathfinding import distances_from
 
 
 # Small simple 5x5 test maze layout
@@ -129,7 +132,7 @@ def test_game_over_when_lives_exhausted(game_state):
 
 
 def test_victory_when_all_dots_eaten(game_state):
-    """Clearing all collectibles triggers VICTORY state."""
+    """Clearing Level 1's collectibles starts its transition."""
     # Clear all dots except one
     game_state.maze.dots.clear()
     game_state.maze.power_pellets.clear()
@@ -144,6 +147,81 @@ def test_victory_when_all_dots_eaten(game_state):
     game_state.update()
 
     assert game_state.maze.remaining_dots_count() == 0
+    assert game_state.mode == GameMode.LEVEL_TRANSITION
+    assert game_state.level_transition_ticks == LEVEL_TRANSITION_TICKS
+
+
+def test_level_transition_loads_level_two_once_and_preserves_player_progress():
+    state = GameState(Maze(SIMPLE_MAZE), ai_enabled=True)
+    state.score = 750
+    state.lives = 2
+    state.power_ticks_remaining = 90
+    state.ai_player.recent_tiles = ((1, 1), (2, 1))
+    state.maze.dots.clear()
+    state.maze.power_pellets.clear()
+
+    state.update()
+    assert state.mode == GameMode.LEVEL_TRANSITION
+    transition_positions = (
+        (state.pacman.col, state.pacman.row),
+        tuple((ghost.col, ghost.row) for ghost in state.ghosts),
+    )
+
+    for _ in range(LEVEL_TRANSITION_TICKS - 1):
+        state.update()
+        assert state.mode == GameMode.LEVEL_TRANSITION
+        assert (
+            (state.pacman.col, state.pacman.row),
+            tuple((ghost.col, ghost.row) for ghost in state.ghosts),
+        ) == transition_positions
+
+    state.update()
+
+    assert state.mode == GameMode.PLAYING
+    assert state.level == 2
+    assert state.maze.layout_strings == list(LEVEL_TWO_LAYOUT)
+    assert state.score == 750
+    assert state.lives == 2
+    assert state.power_ticks_remaining == 0
+    assert state.ai_player.recent_tiles == ()
+    assert state.ai_player.last_decision_tile is None
+    assert len(state.ghosts) == 4
+    assert all(
+        (ghost.col, ghost.row) == (ghost.spawn_col, ghost.spawn_row)
+        for ghost in state.ghosts
+    )
+    state.maze.dots.clear()
+    state.maze.power_pellets.clear()
+    state.update()
+    assert state.mode == GameMode.VICTORY
+
+
+def test_level_two_layout_has_valid_reachable_collectibles_and_spawns():
+    first_level = Maze(SIMPLE_MAZE)
+    level_two = Maze(list(LEVEL_TWO_LAYOUT))
+    spawn_tiles = [level_two.pacman_spawn, *level_two.ghost_spawns]
+
+    assert len(LEVEL_TWO_LAYOUT) == 25
+    assert all(len(row) == 25 for row in LEVEL_TWO_LAYOUT)
+    assert level_two.layout_strings != first_level.layout_strings
+    assert len(set(spawn_tiles)) == len(spawn_tiles)
+    assert all(level_two.is_walkable(*tile) for tile in spawn_tiles)
+    assert all(
+        level_two.is_walkable(*tile)
+        for tile in level_two.dots | level_two.power_pellets
+    )
+    assert level_two.total_dots_count() > 0
+    reachable = distances_from(level_two, level_two.pacman_spawn)
+    assert level_two.dots | level_two.power_pellets <= reachable.keys()
+
+
+def test_clearing_level_two_triggers_final_victory(game_state):
+    game_state.level = 2
+    game_state.maze.dots.clear()
+    game_state.maze.power_pellets.clear()
+
+    game_state.update()
+
     assert game_state.mode == GameMode.VICTORY
 
 

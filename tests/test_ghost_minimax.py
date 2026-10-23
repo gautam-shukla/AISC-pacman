@@ -170,6 +170,55 @@ def test_ghost_minimax_uses_other_ghost_positions_in_simulated_collisions():
     assert planner.last_scores[Direction.RIGHT] < score_with_other_ghost
 
 
+def test_ghost_minimax_penalizes_clustering_with_other_ghosts():
+    maze = Maze(
+        [
+            "#######",
+            "#.....#",
+            "#.....#",
+            "#.....#",
+            "#.....#",
+            "#.....#",
+            "#######",
+        ]
+    )
+    planner = GhostMinimaxPlanner(depth=1)
+
+    clustered_score = planner._evaluate(
+        maze,
+        pacman=(5, 5),
+        ghost=(3, 3),
+        other_ghosts=((3, 4),),
+        power_active=False,
+        player_lives=3,
+    )
+    separated_score = planner._evaluate(
+        maze,
+        pacman=(5, 5),
+        ghost=(3, 3),
+        other_ghosts=((1, 1),),
+        power_active=False,
+        player_lives=3,
+    )
+
+    assert separated_score > clustered_score
+
+
+def test_default_ghosts_have_separate_minimax_state_and_spread_spawns():
+    state = GameState()
+    spawns = [(ghost.spawn_col, ghost.spawn_row) for ghost in state.ghosts]
+    planners = [ghost.minimax for ghost in state.ghosts]
+
+    assert len(spawns) == 4
+    assert len(set(spawns)) == len(spawns)
+    assert len({id(planner) for planner in planners}) == len(planners)
+    assert all(
+        abs(first[0] - second[0]) + abs(first[1] - second[1]) >= 10
+        for index, first in enumerate(spawns)
+        for second in spawns[index + 1 :]
+    )
+
+
 def test_clearing_the_last_collectible_is_a_terminal_win_for_pacman():
     maze = Maze(["#####", "#G.P#", "#####"])
     maze.dots = {(2, 1)}

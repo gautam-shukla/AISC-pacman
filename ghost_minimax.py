@@ -4,8 +4,10 @@ from typing import Dict, FrozenSet, Sequence, Tuple
 from maze import Maze
 from settings import (
     Direction,
+    GHOST_MINIMAX_CLUSTER_PENALTY,
     GHOST_MINIMAX_DEAD_END_PENALTY,
     GHOST_MINIMAX_ESCAPE_OPTION_WEIGHT,
+    GHOST_MINIMAX_SEPARATION_WEIGHT,
     GHOST_MINIMAX_SEARCH_DEPTH,
 )
 
@@ -72,6 +74,16 @@ class GhostMinimaxPlanner:
         if pacman in all_ghosts:
             return self._terminal_score(power_active, player_lives)
 
+        separation_score = 0.0
+        for other_ghost in other_ghosts:
+            distance = abs(ghost[0] - other_ghost[0]) + abs(
+                ghost[1] - other_ghost[1]
+            )
+            separation_score += min(distance, 4) * GHOST_MINIMAX_SEPARATION_WEIGHT
+            separation_score -= (
+                max(0, 2 - distance) * GHOST_MINIMAX_CLUSTER_PENALTY
+            )
+
         distance = abs(pacman[0] - ghost[0]) + abs(pacman[1] - ghost[1])
         ghost_exits = len(self._legal_actions(maze, ghost))
         pacman_exits = len(self._legal_actions(maze, pacman))
@@ -85,12 +97,14 @@ class GhostMinimaxPlanner:
                 float(distance)
                 + GHOST_MINIMAX_ESCAPE_OPTION_WEIGHT * ghost_exits
                 - dead_end_penalty
+                + separation_score
             )
         dead_end_penalty = 2.0 if ghost_exits <= 1 and distance > 0 else 0.0
         return (
             -float(distance)
             + 0.5 * (4 - pacman_exits)
             - dead_end_penalty
+            + separation_score
         )
 
     def _minimax(

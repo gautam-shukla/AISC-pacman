@@ -18,6 +18,7 @@ from settings import (
     DIFFICULTY_HARD_THRESHOLD,
     RESPAWN_PAUSE_TICKS,
     RESPAWN_INVULNERABILITY_TICKS,
+    LEVEL_TRANSITION_TICKS,
     TILE_SIZE,
     MINIMAX_SEARCH_DEPTH,
     GHOST_MINIMAX_SEARCH_DEPTH,
@@ -25,6 +26,7 @@ from settings import (
 from maze import Maze
 from pacman import Pacman
 from ghost import Ghost
+from level_manager import LevelManager
 
 
 class GameState:
@@ -39,9 +41,12 @@ class GameState:
         ghost_minimax_depth: int = GHOST_MINIMAX_SEARCH_DEPTH,
     ):
         self.maze = maze or Maze()
+        self.level_manager = LevelManager(self.maze.layout_strings)
+        self.ghost_minimax_depth = ghost_minimax_depth
         self.score = 0
         self.lives = INITIAL_LIVES
         self.level = 1
+        self.level_transition_ticks = 0
         self.mode = GameMode.PLAYING
         self.power_ticks_remaining = 0
         self.respawn_invulnerability_ticks = 0
@@ -61,25 +66,8 @@ class GameState:
                 debug=ai_debug,
             )
 
-        # Entities
-        p_col, p_row = self.maze.pacman_spawn
-        self.pacman = Pacman(p_col, p_row)
-
-        self.ghosts: List[Ghost] = []
-        ghost_types = list(GhostType)
-        for index, (g_col, g_row) in enumerate(self.maze.ghost_spawns):
-            ghost_type = ghost_types[index % len(ghost_types)]
-            self.ghosts.append(
-                Ghost(
-                    g_col,
-                    g_row,
-                    ghost_type=ghost_type,
-                    minimax_depth=ghost_minimax_depth,
-                )
-            )
-
-        # Death respawn delay counter
         self.death_pause_ticks = 0
+        self._create_entities()
 
     def toggle_pause(self) -> None:
         """Toggles between PLAYING and PAUSED modes."""
@@ -95,12 +83,40 @@ class GameState:
         self.power_ticks_remaining = 0
         self.death_pause_ticks = 0
         self.respawn_invulnerability_ticks = 0
+        self.level_transition_ticks = 0
         self._reset_difficulty_tracking()
         if self.ai_player is not None:
             self.ai_player.reset_history()
-        self.maze.reset_collectibles()
-        self.reset_positions()
+        self._load_level(1)
         self.mode = GameMode.PLAYING
+
+    def _create_entities(self) -> None:
+        p_col, p_row = self.maze.pacman_spawn
+        self.pacman = Pacman(p_col, p_row)
+
+        self.ghosts: List[Ghost] = []
+        ghost_types = list(GhostType)
+        for index, (g_col, g_row) in enumerate(self.maze.ghost_spawns):
+            self.ghosts.append(
+                Ghost(
+                    g_col,
+                    g_row,
+                    ghost_type=ghost_types[index % len(ghost_types)],
+                    minimax_depth=self.ghost_minimax_depth,
+                )
+            )
+
+    def _load_level(self, level: int) -> None:
+        self.maze = self.level_manager.load(level)
+        self.level = level
+        self.power_ticks_remaining = 0
+        self.death_pause_ticks = 0
+        self.respawn_invulnerability_ticks = 0
+        self.level_transition_ticks = 0
+        self._reset_difficulty_tracking()
+        self._create_entities()
+        if self.ai_player is not None:
+            self.ai_player.reset_history()
 
     def reset_positions(self) -> None:
         """Resets Pac-Man and all ghosts to their spawn tiles."""
@@ -152,6 +168,12 @@ class GameState:
 
     def update(self) -> None:
         """Executes one frame of game logic."""
+        if self.mode == GameMode.LEVEL_TRANSITION:
+            self.level_transition_ticks -= 1
+            if self.level_transition_ticks <= 0:
+                self._load_level(2)
+                self.mode = GameMode.PLAYING
+            return
         if self.mode != GameMode.PLAYING:
             return
 
@@ -184,7 +206,11 @@ class GameState:
 
         # 3. Check victory condition (all dots cleared)
         if self.maze.remaining_dots_count() == 0:
-            self.mode = GameMode.VICTORY
+            if self.level == 1:
+                self.level_transition_ticks = LEVEL_TRANSITION_TICKS
+                self.mode = GameMode.LEVEL_TRANSITION
+            else:
+                self.mode = GameMode.VICTORY
             return
 
         # 4. Update ghosts and check collisions

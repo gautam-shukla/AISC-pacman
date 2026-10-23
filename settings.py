@@ -9,6 +9,7 @@ class GameMode(Enum):
     MENU = auto()
     PLAYING = auto()
     PAUSED = auto()
+    LEVEL_TRANSITION = auto()
     GAME_OVER = auto()
     VICTORY = auto()
 
@@ -89,6 +90,9 @@ MINIMAX_LOOP_PENALTY = 20.0
 GHOST_MINIMAX_SEARCH_DEPTH = 4
 GHOST_MINIMAX_DEAD_END_PENALTY = 8.0
 GHOST_MINIMAX_ESCAPE_OPTION_WEIGHT = 1.5
+GHOST_MINIMAX_CLUSTER_PENALTY = 6.0
+GHOST_MINIMAX_SEPARATION_WEIGHT = 1.5
+LEVEL_TRANSITION_TICKS = FPS * 2
 
 # Gameplay rules
 INITIAL_LIVES = 3
@@ -129,7 +133,7 @@ COLOR_GHOST_PUPIL = (30, 40, 180)
 # '=' = Ghost gate / barrier (walkable by ghost, solid to pacman initially)
 _BASE_MAZE = [
     "#####################",
-    "#.........#.........#",
+    "#G........#........G#",
     "#.###.###.#.###.###.#",
     "#o###.###.#.###.###o#",
     "#.###.###.#.###.###.#",
@@ -138,7 +142,7 @@ _BASE_MAZE = [
     "#.###.#.#####.#.###.#",
     "#.....#...#...#.....#",
     "#####.### # ###.#####",
-    "    #.# GGGG  #.#    ",
+    "    #.#       #.#    ",
     "#####.# ##### #.#####",
     "#.........#.........#",
     "#.###.###.#.###.###.#",
@@ -147,7 +151,7 @@ _BASE_MAZE = [
     "#.....#...#...#.....#",
     "#.#######.#.#######.#",
     "#...................#",
-    "#.#################.#",
+    "#G#################G#",
     "#####################",
 ]
 

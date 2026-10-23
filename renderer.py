@@ -67,7 +67,12 @@ class Renderer:
             self._render_ghost(maze_surface, ghost)
 
         # 3. Render state overlays (Paused, Game Over, Victory)
-        if state.mode in (GameMode.PAUSED, GameMode.GAME_OVER, GameMode.VICTORY):
+        if state.mode in (
+            GameMode.PAUSED,
+            GameMode.LEVEL_TRANSITION,
+            GameMode.GAME_OVER,
+            GameMode.VICTORY,
+        ):
             self._render_overlay(state)
 
     def _render_hud(self, state: GameState) -> None:
@@ -223,14 +228,18 @@ class Renderer:
             title = self.font_overlay.render("GAME PAUSED", True, (255, 230, 80))
             sub1 = self.font_hud.render("Press [P] or [SPACE] to Resume", True, COLOR_TEXT)
             sub2 = self.font_sub.render("Press [R] to Restart", True, COLOR_TEXT_DIM)
+        elif state.mode == GameMode.LEVEL_TRANSITION:
+            title = self.font_overlay.render("LEVEL COMPLETE!", True, (80, 255, 120))
+            sub1 = self.font_hud.render("Preparing Level 2...", True, COLOR_TEXT)
+            sub2 = self.font_sub.render("Get ready for the next maze", True, COLOR_TEXT_DIM)
         elif state.mode == GameMode.GAME_OVER:
             title = self.font_overlay.render("GAME OVER", True, (255, 70, 70))
             sub1 = self.font_hud.render(f"Final Score: {state.score}", True, COLOR_TEXT)
             sub2 = self.font_sub.render("Press [R] to Play Again", True, COLOR_TEXT_DIM)
         elif state.mode == GameMode.VICTORY:
-            title = self.font_overlay.render("LEVEL CLEARED!", True, (80, 255, 120))
+            title = self.font_overlay.render("GAME COMPLETE!", True, (80, 255, 120))
             sub1 = self.font_hud.render(f"Magnificent! Score: {state.score}", True, COLOR_TEXT)
-            sub2 = self.font_sub.render("Press [R] to Restart Maze", True, COLOR_TEXT_DIM)
+            sub2 = self.font_sub.render("Press [R] to Play Again", True, COLOR_TEXT_DIM)
         else:
             return
 
