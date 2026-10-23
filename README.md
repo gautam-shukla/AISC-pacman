@@ -47,7 +47,9 @@ The game is designed with a strict separation of concerns:
 - **Expanded Maze**: The 21×21 base maze is surrounded by a connected collectible corridor, producing a 25×25 playable grid sized to fit the display.
 - **Safe Respawning**: Losing a life preserves score and maze progress, resets entity positions, and provides a pause plus brief collision immunity.
 - **Minimax Ghost AI**: Ghosts use plain Minimax against Pac-Man's possible tile moves. Search depth is configurable with `--ghost-minimax-depth` (default: 4 plies); other ghosts remain stationary in an individual ghost's search, matching the game's sequential ghost updates. Power pellets reverse the ghost's evaluation so vulnerable ghosts avoid Pac-Man.
+- **Independent Ghost Spacing**: Ghosts retain separate Minimax planners and positions; their evaluation discourages clustering without forcing a different move when it would be illegal or tactically worse.
 - **Autonomous Pac-Man**: `--ai` uses plain Minimax to balance survival, escape options, power pellets, and clearing the remaining collectibles.
+- **Automatic Level Progression**: Clearing Level 1 pauses play for a brief completion message, then loads a distinct Level 2 while preserving score and lives.
 - **Configurable Maze Environments**: JSON-based level configurations supporting dynamic obstacles, keys, switches, and ghost gates.
 - **Multi-Modal Game State**: Robust state transitions (`MENU`, `PLAYING`, `PAUSED`, `GAME_OVER`, `VICTORY`).
 
@@ -83,10 +85,10 @@ The immutable search state tracks Pac-Man and ghost positions, remaining dots an
 
 | Level | Name | Theme & Challenge |
 |:---:|---|---|
-| **Level 1** | **Learning the Maze** | Introductory layout; collect required dots and reach the exit while avoiding a solitary basic ghost. |
-| **Level 2** | **Locked Passages** | Introduces color-coded keys, locked barrier doors, and toggle switches controlling corridor gates. |
-| **Level 3** | **Survival Challenge** | Multi-ghost coordination (Hunter + Ambusher), limited sight radius / fog-of-war, and scarce power pellets. |
-| **Level 4** | **Final Escape** | Large multi-chamber maze with timed hazard barriers, puzzle switches, guarding ghosts, and a sealed exit requiring all objectives. |
+| **Level 1** | **Learning the Maze** | Original expanded maze; collect all dots and power pellets while avoiding four independently positioned ghosts. |
+| **Level 2** | **Maze Challenge** | A different 25×25 layout with staggered barriers, narrower passages, four power pellets, and four spread-out ghost spawns. |
+
+After the final Level 1 collectible is collected, the game freezes movement and collisions during a two-second “LEVEL COMPLETE!” overlay, then loads Level 2. Score and remaining lives carry over; level-specific entities, power state, and Pac-Man decision history reset. Clearing Level 2 ends the game in VICTORY.
 
 ---
 
@@ -103,7 +105,7 @@ ai-pacman/
 ├── game_state.py           # Game loop logic, scoring, lives, state machine
 ├── renderer.py             # Geometric arcade renderer, HUD, modal overlays
 ├── pathfinding.py          # BFS and A* utilities (not used by ghost movement)
-├── level_manager.py        # JSON level loader and objective verification
+├── level_manager.py        # Level 1/2 layouts and maze construction
 ├── pytest.ini              # Pytest configuration
 ├── requirements.txt        # Python dependency specifications
 ├── README.md               # Project documentation
