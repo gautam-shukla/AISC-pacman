@@ -15,6 +15,27 @@ def test_minimax_uses_configurable_depth_without_pruning():
     assert not hasattr(planner, "pruned_branches")
 
 
+def test_seeded_minimax_randomizes_only_equal_candidates_reproducibly():
+    maze = Maze(
+        [
+            "#####",
+            "#...#",
+            "#...#",
+            "#...#",
+            "#####",
+        ]
+    )
+    decisions = []
+    for seed in (0, 0, 1):
+        planner = MinimaxPlanner(depth=1, random_seed=seed)
+        action, scores = planner.choose_action(maze, (2, 2), [])
+        assert len(set(scores.values())) == 1
+        decisions.append(action)
+
+    assert decisions[0] == decisions[1]
+    assert decisions[0] != decisions[2]
+
+
 def test_minimax_prioritizes_survival_more_when_fewer_lives_remain():
     planner = MinimaxPlanner(depth=1)
 
@@ -129,6 +150,41 @@ def test_minimax_penalizes_recently_repeated_positions():
     assert planner.evaluate_state(maze, repeated_state) < planner.evaluate_state(
         maze, state
     )
+
+
+def test_search_power_timer_expires_and_eaten_ghost_returns_to_spawn():
+    maze = Maze(["#######", "#.....#", "#######"])
+    planner = MinimaxPlanner(depth=1, random_seed=3)
+    state = SearchState(
+        pacman=(1, 1),
+        ghosts=((2, 1, 0, 0, 4, 1, 2.5),),
+        dots=frozenset(),
+        power_pellets=frozenset({(2, 1)}),
+        power_active=False,
+        lives=3,
+        recent_tiles=(),
+    )
+
+    powered_state = planner._move_pacman(state, Direction.RIGHT)
+
+    assert powered_state.power_active
+    assert powered_state.power_ticks_remaining > 0
+    assert powered_state.ghosts[0][:2] == (4, 1)
+    assert powered_state.ghosts[0][4:6] == (4, 1)
+
+    expiring_state = SearchState(
+        pacman=(3, 1),
+        ghosts=((4, 1, -1, 0, 4, 1, 2.5),),
+        dots=frozenset(),
+        power_pellets=frozenset(),
+        power_active=True,
+        lives=3,
+        recent_tiles=(),
+        power_ticks_remaining=1,
+    )
+    expired = planner._move_ghost(expiring_state, 0, Direction.LEFT)
+    assert expired.power_ticks_remaining == 0
+    assert expired.ghosts[0][:2] == (3, 1)
 
 
 def test_ai_game_completes_level_one_without_ghosts_and_starts_transition():

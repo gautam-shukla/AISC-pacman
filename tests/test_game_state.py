@@ -117,6 +117,25 @@ def test_ghost_collision_decrements_lives(game_state):
     assert game_state.death_pause_ticks > 0
 
 
+def test_pacman_ai_keeps_route_history_after_death_for_adaptation():
+    state = GameState(
+        Maze(SIMPLE_MAZE),
+        ai_enabled=True,
+        random_seed=4,
+    )
+    state.ai_player.recent_tiles = ((1, 1), (2, 1), (2, 2))
+    state.pacman.x = 2.0 * TILE_SIZE
+    state.pacman.y = 1.0 * TILE_SIZE
+    state.ghosts[0].x = state.pacman.x
+    state.ghosts[0].y = state.pacman.y
+
+    state.update()
+
+    assert state.lives == INITIAL_LIVES - 1
+    assert state.ai_player.recent_tiles == ((1, 1), (2, 1), (2, 2))
+    assert state.ai_player.last_decision_tile is None
+
+
 def test_game_over_when_lives_exhausted(game_state):
     """When lives reach 0, game state switches to GAME_OVER."""
     game_state.lives = 1
@@ -283,7 +302,7 @@ def test_life_loss_resets_every_ghost_to_its_own_spawn():
         assert (ghost.col, ghost.row) == (ghost.spawn_col, ghost.spawn_row)
         assert ghost.x == (ghost.spawn_col + 0.5) * TILE_SIZE
         assert ghost.y == (ghost.spawn_row + 0.5) * TILE_SIZE
-        assert ghost.current_dir == Direction.LEFT
+        assert ghost.current_dir == Direction.NONE
 
 
 def test_respawn_invulnerability_prevents_immediate_collision(game_state):
