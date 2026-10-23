@@ -18,15 +18,9 @@ from settings import (
     DIFFICULTY_HARD_THRESHOLD,
     RESPAWN_PAUSE_TICKS,
     RESPAWN_INVULNERABILITY_TICKS,
-    AI_PENALTY_DANGER,
-    AI_PENALTY_DEAD_END,
-    AI_PENALTY_LIFE_LOST,
-    AI_REWARD_DOT,
-    AI_REWARD_GHOST_EATEN,
-    AI_REWARD_POWER_PELLET,
-    AI_REWARD_SURVIVAL,
     TILE_SIZE,
     MINIMAX_SEARCH_DEPTH,
+    GHOST_MINIMAX_SEARCH_DEPTH,
 )
 from maze import Maze
 from pacman import Pacman
@@ -40,9 +34,9 @@ class GameState:
         self,
         maze: Optional[Maze] = None,
         ai_enabled: bool = False,
-        ai_q_table_path: Optional[str] = None,
         minimax_depth: int = MINIMAX_SEARCH_DEPTH,
         ai_debug: bool = False,
+        ghost_minimax_depth: int = GHOST_MINIMAX_SEARCH_DEPTH,
     ):
         self.maze = maze or Maze()
         self.score = 0
@@ -63,7 +57,6 @@ class GameState:
             from pacman_ai import PacmanAI
 
             self.ai_player = PacmanAI(
-                q_table_path=ai_q_table_path,
                 minimax_depth=minimax_depth,
                 debug=ai_debug,
             )
@@ -76,7 +69,14 @@ class GameState:
         ghost_types = list(GhostType)
         for index, (g_col, g_row) in enumerate(self.maze.ghost_spawns):
             ghost_type = ghost_types[index % len(ghost_types)]
-            self.ghosts.append(Ghost(g_col, g_row, ghost_type=ghost_type))
+            self.ghosts.append(
+                Ghost(
+                    g_col,
+                    g_row,
+                    ghost_type=ghost_type,
+                    minimax_depth=ghost_minimax_depth,
+                )
+            )
 
         # Death respawn delay counter
         self.death_pause_ticks = 0
@@ -97,10 +97,7 @@ class GameState:
         self.respawn_invulnerability_ticks = 0
         self._reset_difficulty_tracking()
         if self.ai_player is not None:
-            self.ai_player.previous_state = None
-            self.ai_player.previous_action = None
-            self.ai_player.last_decision_tile = None
-            self.ai_player.pending_reward = 0.0
+            self.ai_player.reset_history()
         self.maze.reset_collectibles()
         self.reset_positions()
         self.mode = GameMode.PLAYING
@@ -168,26 +165,9 @@ class GameState:
             self._evaluate_difficulty()
 
         invulnerability_was_active = self.respawn_invulnerability_ticks > 0
-        ai_reward = AI_REWARD_SURVIVAL
-        life_lost_this_frame = False
 
         if self.ai_player is not None:
             self._choose_ai_direction()
-
-        if self.ai_player is not None:
-            tile = (self.pacman.col, self.pacman.row)
-            legal = self.ai_player.planner.legal_actions(self.maze, tile)
-            ghost_tiles = [(ghost.col, ghost.row) for ghost in self.ghosts]
-            if any(
-                abs(tile[0] - ghost_col) + abs(tile[1] - ghost_row) <= 2
-                for ghost_col, ghost_row in ghost_tiles
-            ):
-                ai_reward -= AI_PENALTY_DANGER
-            if len(legal) <= 1 and any(
-                abs(tile[0] - ghost_col) + abs(tile[1] - ghost_row) <= 4
-                for ghost_col, ghost_row in ghost_tiles
-            ):
-                ai_reward -= AI_PENALTY_DEAD_END
 
         # 1. Update Pac-Man
         self.pacman.update(self.maze)
@@ -196,25 +176,15 @@ class GameState:
         earned = self.maze.eat_dot(self.pacman.col, self.pacman.row)
         if earned > 0:
             self.score += earned
-            ai_reward += AI_REWARD_DOT
 
         pellet_earned = self.maze.eat_power_pellet(self.pacman.col, self.pacman.row)
         if pellet_earned > 0:
             self.score += pellet_earned
             self.power_ticks_remaining = POWER_PELLET_DURATION
-            ai_reward += AI_REWARD_POWER_PELLET
 
         # 3. Check victory condition (all dots cleared)
         if self.maze.remaining_dots_count() == 0:
             self.mode = GameMode.VICTORY
-            if self.ai_player is not None:
-                self.ai_player.learn(
-                    ai_reward,
-                    self.maze,
-                    (self.pacman.col, self.pacman.row),
-                    [(ghost.col, ghost.row) for ghost in self.ghosts],
-                    terminal=True,
-                )
             return
 
         # 4. Update ghosts and check collisions
@@ -226,6 +196,11 @@ class GameState:
                 self.lives,
                 self.power_ticks_remaining / POWER_PELLET_DURATION,
                 self.difficulty_multiplier,
+                other_ghosts=[
+                    (other.col, other.row)
+                    for other in self.ghosts
+                    if other is not ghost
+                ],
             )
 
             # Check collision between Pac-Man and Ghost
@@ -235,29 +210,18 @@ class GameState:
             ):
                 if self.power_ticks_remaining > 0:
                     self.score += GHOST_POINTS
-                    ai_reward += AI_REWARD_GHOST_EATEN
                     ghost.reset_position()
                 else:
                     self._handle_player_hit()
-                    life_lost_this_frame = True
-                    ai_reward -= AI_PENALTY_LIFE_LOST
                     break
 
         if pellet_earned == 0 and self.power_ticks_remaining > 0:
             self.power_ticks_remaining -= 1
         if invulnerability_was_active:
             self.respawn_invulnerability_ticks -= 1
-        if self.ai_player is not None:
-            self.ai_player.learn(
-                ai_reward,
-                self.maze,
-                (self.pacman.col, self.pacman.row),
-                [(ghost.col, ghost.row) for ghost in self.ghosts],
-                terminal=life_lost_this_frame or self.mode != GameMode.PLAYING,
-            )
 
     def _choose_ai_direction(self) -> None:
-        """Make one learned, risk-aware movement choice per tile."""
+        """Make one Minimax movement choice per tile."""
         if self.ai_player is None:
             return
         tile = (self.pacman.col, self.pacman.row)
@@ -276,15 +240,12 @@ class GameState:
             self.ghosts,
             power_active=self.power_ticks_remaining > 0,
             current_direction=self.pacman.current_dir,
+            lives=self.lives,
         )
         if action != (0, 0):
             self.pacman.set_next_direction(action)
-        self.ai_player.last_decision_tile = tile
-
-    def save_ai(self) -> None:
-        """Persist Q-values when autonomous mode is enabled."""
-        if self.ai_player is not None:
-            self.ai_player.save()
+        else:
+            self.pacman.set_next_direction((0, 0))
 
     def _handle_player_hit(self) -> None:
         """Handles Pac-Man losing a life or triggering Game Over."""
@@ -299,7 +260,7 @@ class GameState:
             self.mode = GameMode.GAME_OVER
         else:
             if self.ai_player is not None:
-                self.ai_player.last_decision_tile = None
+                self.ai_player.reset_history()
             self.reset_positions()
             self.death_pause_ticks = RESPAWN_PAUSE_TICKS
             self.respawn_invulnerability_ticks = RESPAWN_INVULNERABILITY_TICKS

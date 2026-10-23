@@ -6,9 +6,8 @@
 [![Course](https://img.shields.io/badge/course-AISC-purple.svg)](#academic-demonstrability)
 
 An undergraduate **Artificial Intelligence and Soft Computing (AISC)** course project that upgrades the classic arcade Pac-Man with:
-- **Graph Search & Pathfinding**: Breadth-First Search (BFS) and $A^*$ algorithms.
-- **Behavioral Modeling**: Finite-State Machines (FSMs) for distinct ghost archetypes.
-- **Soft Computing**: Mamdani Fuzzy Inference System (FIS) for dynamic ghost aggression.
+- **Graph Search & Pathfinding**: Breadth-First Search (BFS) and $A^*$ utilities, separate from ghost move selection.
+- **Adversarial Search**: Plain Minimax controls ghost moves against Pac-Man's responses.
 - **Puzzle Mechanics**: Locked passages, keys, switches, power pellets, and progressive mazes.
 - **Empirical Benchmarking**: Automated headless experimental pipeline comparing search algorithms and behavioral models.
 
@@ -18,7 +17,7 @@ An undergraduate **Artificial Intelligence and Soft Computing (AISC)** course pr
 
 1. [Project Overview](#project-overview)
 2. [Key Features](#key-features)
-3. [AI & Soft Computing Components](#ai--soft-computing-components)
+3. [AI Components](#ai-components)
 4. [Progressive Level Design](#progressive-level-design)
 5. [Project Architecture](#project-architecture)
 6. [Prerequisites & Installation](#prerequisites--installation)
@@ -31,12 +30,12 @@ An undergraduate **Artificial Intelligence and Soft Computing (AISC)** course pr
 
 ## 1. Project Overview
 
-Traditional Pac-Man relies on simple deterministic tile-targeting rules. **AI Pac-Man: The Adaptive Maze Challenge** transforms the environment into an adaptive multi-agent system. Ghost agents evaluate environmental state and player vulnerabilities, dynamically adjusting their pursuit strategies using graph search and fuzzy decision logic.
+Traditional Pac-Man relies on simple deterministic tile-targeting rules. **AI Pac-Man: The Adaptive Maze Challenge** transforms the environment into an adaptive multi-agent system. Ghost agents use plain Minimax to reason about legal Pac-Man responses while respecting power-pellet vulnerability.
 
 The game is designed with a strict separation of concerns:
 - **Game Engine**: Pure Python & Pygame with procedural vector graphics (runs standalone without external image or sound assets).
 - **Physics & Grid Navigation**: Sub-pixel floating point positioning with perpendicular corner snapping and direction buffering.
-- **AI Core**: Independent, unit-testable modules for pathfinding and fuzzy inference.
+- **AI Core**: Independent, unit-testable modules for ghost Minimax and Pac-Man decision-making.
 
 ---
 
@@ -44,16 +43,17 @@ The game is designed with a strict separation of concerns:
 
 - **Procedural Retro Arcade Aesthetics**: Full vector rendering of classic maze walls, animated Pac-Man chomping, skirted ghosts with directional pupils, pulsing power pellets, and retro HUD overlays.
 - **Collision & Movement System**: Grid-based spatial checks preventing wall penetration while allowing seamless 180° reversals and smooth corner turns.
-- **Adaptive Difficulty**: A bounded, smoothed performance controller gradually adjusts ghost speed and pursuit range; the current tier is shown in the HUD.
+- **Adaptive Difficulty**: A bounded, smoothed performance controller gradually adjusts ghost speed; the current tier is shown in the HUD.
 - **Expanded Maze**: The 21×21 base maze is surrounded by a connected collectible corridor, producing a 25×25 playable grid sized to fit the display.
 - **Safe Respawning**: Losing a life preserves score and maze progress, resets entity positions, and provides a pause plus brief collision immunity.
-- **Autonomous Pac-Man**: `--ai` combines risk-weighted A* pellet routing with configurable Minimax and alpha-beta pruning against ghost responses. Tabular Q-learning persists experience and breaks ties among the strongest Minimax moves. Rewards encourage collecting dots and power pellets and surviving; danger, trapped dead ends, and life loss are penalized.
+- **Minimax Ghost AI**: Ghosts use plain Minimax against Pac-Man's possible tile moves. Search depth is configurable with `--ghost-minimax-depth` (default: 4 plies); other ghosts remain stationary in an individual ghost's search, matching the game's sequential ghost updates. Power pellets reverse the ghost's evaluation so vulnerable ghosts avoid Pac-Man.
+- **Autonomous Pac-Man**: `--ai` uses plain Minimax to balance survival, escape options, power pellets, and clearing the remaining collectibles.
 - **Configurable Maze Environments**: JSON-based level configurations supporting dynamic obstacles, keys, switches, and ghost gates.
 - **Multi-Modal Game State**: Robust state transitions (`MENU`, `PLAYING`, `PAUSED`, `GAME_OVER`, `VICTORY`).
 
 ---
 
-## 3. AI & Soft Computing Components
+## 3. AI Components
 
 ### A. Graph Search Algorithms
 1. **Breadth-First Search (BFS)**:
@@ -65,22 +65,17 @@ The game is designed with a strict separation of concerns:
      $$h(n) = |x_n - x_{\text{goal}}| + |y_n - y_{\text{goal}}|$$
    - Optimally finds shortest paths while drastically reducing expanded nodes in open corridors.
 
-### B. Ghost Archetypes & Finite-State Machines
-Each ghost operates under a Finite-State Machine with distinct states: `CHASE`, `PATROL`, `FLEE`, and `SEARCH`.
-- **Hunter (Red / Blinky)**: Relentlessly computes direct $A^*$ paths to Pac-Man's exact coordinates.
-- **Ambusher (Pink / Pinky)**: Anticipates player trajectory, targeting 3–4 tiles ahead along Pac-Man's heading vector.
-- **Guard (Orange / Clyde)**: Patrols vital junctions, keys, or level exits; shifts into pursuit when Pac-Man enters its perimeter.
-- **Patrol / Random (Cyan / Inky)**: Explores corridors through controlled stochastic arbitration at intersections.
+### B. Minimax Ghost Controller
+Ghost movement is selected by `GhostMinimaxPlanner` in `ghost_minimax.py`. Each ghost is the MAX player and tries to catch Pac-Man; Pac-Man is the MIN player and chooses the response that avoids capture. Search simulates legal cardinal moves on the existing maze, alternates one ghost move with one Pac-Man move, and evaluates the resulting state using Manhattan distance, capture/lives, dead-end, Pac-Man escape options, and terminal collectible completion. Search uses plain Minimax without alpha-beta pruning or pathfinding.
 
-### C. Fuzzy Logic Controller (Soft Computing)
-A Mamdani Fuzzy Inference System determines real-time ghost **Aggression Scores** ($0 - 100$):
-- **Fuzzy Inputs**:
-  1. *Distance to Pac-Man* (Near, Medium, Far)
-  2. *Pellet Protection Status* (Vulnerable, Expiring, Protected)
-  3. *Player Lives / Vulnerability* (Critical, Moderate, Healthy)
-- **Fuzzy Inference & Defuzzification**:
-  - Rule base evaluated using Min-Max aggregation.
-  - Centroid defuzzification yields a continuous aggression score that modulates ghost movement speed and chase persistence.
+Decisions are recalculated at tile centers, preserving the existing movement timing. Reversals are avoided when another legal move exists, while frightened ghosts can reverse to escape. When multiple ghosts exist, only the active ghost moves in the search; the other ghosts' current tile positions are held fixed, in keeping with the game's sequential update loop.
+
+Ghost colors and ghost-type assignments remain unchanged, but role-specific A* targeting and patrol routing no longer select ghost moves.
+
+### C. Autonomous Pac-Man Minimax
+When `--ai` is enabled, Pac-Man is MAX and active ghosts are MIN. The search simulates Pac-Man actions followed by each ghost's legal move in the same sequential order as the game update; frightened ghosts instead flee as in the live game. It uses plain Minimax without pruning, A*, BFS, or reinforcement learning. The default depth is six plies and can be changed with `--minimax-depth`.
+
+The immutable search state tracks Pac-Man and ghost positions, remaining dots and power pellets, vulnerability, lives, and recent Pac-Man tiles. The evaluation assigns terminal priority to level completion and capture, then scores collectible progress, distance to remaining collectibles, ghost danger, escape options, dead ends, and repeated positions. Immediate root moves also account for pixel-level collisions that can occur before the next tile-center decision. Only the selected legal action is applied to the live game.
 
 ---
 
@@ -103,11 +98,11 @@ ai-pacman/
 ├── settings.py             # Constants, speeds, dimensions, color palettes
 ├── maze.py                 # Grid representation, wall checks, dots & pellets
 ├── pacman.py               # Player entity, corner snapping, mouth animation
-├── ghost.py                # Ghost agents, movement arbitration, collision bounds
+├── ghost.py                # Ghost entities, movement timing, collision bounds
+├── ghost_minimax.py        # Plain Minimax ghost move selection
 ├── game_state.py           # Game loop logic, scoring, lives, state machine
 ├── renderer.py             # Geometric arcade renderer, HUD, modal overlays
-├── pathfinding.py          # BFS and A* search algorithm implementations
-├── fuzzy_controller.py     # Mamdani Fuzzy Inference System for ghost aggression
+├── pathfinding.py          # BFS and A* utilities (not used by ghost movement)
 ├── level_manager.py        # JSON level loader and objective verification
 ├── pytest.ini              # Pytest configuration
 ├── requirements.txt        # Python dependency specifications
@@ -119,8 +114,8 @@ ai-pacman/
 │   └── level4.json
 ├── tests/                  # Automated pytest test suites
 │   ├── test_game_state.py
+│   ├── test_ghost_minimax.py
 │   ├── test_pathfinding.py
-│   └── test_fuzzy_controller.py
 ├── experiments/            # AISC experimental evaluation suite
 │   ├── run_experiments.py
 │   ├── analyze_results.py
@@ -170,11 +165,17 @@ To launch the desktop game:
 python main.py
 ```
 
-To run autonomous Pac-Man with risk-aware A*, Minimax, alpha-beta pruning, and persistent Q-learning:
+To run autonomous Pac-Man:
 ```powershell
 python main.py --ai
 ```
-The learned Q-table is stored in `~/.aisc_pacman/q_table.json`. Use `--minimax-depth N` to configure the lookahead and `--ai-debug` to print the chosen pellet target, candidate scores, chosen direction, and pruning counts. Normal play remains manual.
+Use `--minimax-depth N` to configure Pac-Man's Minimax search and `--ai-debug` to print candidate scores, visited node count, and the selected move.
+
+Configure the ghost search depth independently:
+```powershell
+python main.py --ghost-minimax-depth 4
+```
+The depth is measured in plies (one ghost or Pac-Man move per ply), and must be at least 1. The default is 4. Manual play remains the default; use the arrow keys or WASD to steer Pac-Man.
 
 ### Command-Line Arguments
 - Run headless smoke tests:
@@ -224,7 +225,7 @@ This project is tailored for undergraduate AISC evaluation:
 2. **Empirical Benchmarks**: Built-in experiment scripts measure:
    - Node expansions: BFS vs. $A^*$.
    - Search execution runtime in milliseconds across identical maze configurations.
-   - Survival times and level completion rates under fixed vs. fuzzy-controlled ghost aggression.
+   - Survival times and level completion rates under Minimax-controlled ghost movement.
 3. **Reproducibility**: Experiments run headlessly with deterministic seeds, producing clean CSV output and publication-quality Matplotlib comparison plots.
 
 ---
