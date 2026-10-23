@@ -1,120 +1,190 @@
-"""Tests for Pac-Man's risk-aware planner and Q-learning agent."""
-import json
+"""Tests for autonomous Pac-Man's plain Minimax planner."""
 
 from game_state import GameState
+from ghost import Ghost
 from maze import Maze
 from pacman import Pacman
-from pacman_ai import MinimaxPlanner, PacmanAI, QLearningAgent, RiskAwareAStar
-from settings import Direction, GhostType, TILE_SIZE
-from ghost import Ghost
+from pacman_ai import MinimaxPlanner, PacmanAI, SearchState
+from settings import Direction, MINIMAX_GHOST_COLLISION_PENALTY, TILE_SIZE
 
 
-def test_risk_planner_returns_walkable_route_and_avoids_ghost_adjacent_actions():
+def test_minimax_uses_configurable_depth_without_pruning():
+    planner = MinimaxPlanner(depth=5)
+
+    assert planner.depth == 5
+    assert not hasattr(planner, "pruned_branches")
+
+
+def test_minimax_prioritizes_survival_more_when_fewer_lives_remain():
+    planner = MinimaxPlanner(depth=1)
+
+    assert planner._death_score(1) < planner._death_score(3)
+
+
+def test_minimax_selects_only_legal_moves_and_handles_no_moves():
     maze = Maze(
         [
-            "#######",
-            "#.....#",
-            "#.#.#.#",
-            "#.....#",
-            "#######",
+            "#####",
+            "#...#",
+            "#####",
         ]
     )
-    planner = RiskAwareAStar()
+    planner = MinimaxPlanner(depth=2)
+    action, scores = planner.choose_action(maze, (2, 1), [])
 
-    route = planner.route_to_pellet(maze, (3, 1), [(4, 1)])
+    assert action in (Direction.LEFT, Direction.RIGHT)
+    assert set(scores) == {Direction.LEFT, Direction.RIGHT}
 
-    assert route[0] == (3, 1)
-    assert all(maze.is_walkable(*tile) for tile in route)
-    safe_actions = planner.safe_actions(maze, (3, 1), [(4, 1)])
-    assert Direction.RIGHT not in safe_actions
-    assert safe_actions
-
-
-def test_unreachable_pellets_are_not_selected():
-    maze = Maze(
-        [
-            "#######",
-            "#...###",
-            "#######",
-            "###...#",
-            "#######",
-        ]
+    trapped_maze = Maze(["###", "#P#", "###"])
+    trapped_action, trapped_scores = planner.choose_action(
+        trapped_maze,
+        trapped_maze.pacman_spawn,
+        [],
     )
-    maze.dots = {(2, 1), (4, 3)}
-
-    route = RiskAwareAStar().route_to_pellet(maze, (1, 1), [])
-
-    assert route[-1] == (2, 1)
-    assert (4, 3) not in route
+    assert trapped_action == Direction.NONE
+    assert trapped_scores == {}
 
 
-def test_q_learning_updates_and_persists_values(tmp_path):
-    table = tmp_path / "q_table.json"
-    agent = QLearningAgent(
-        q_table_path=str(table),
-        epsilon=0,
-        learning_rate=0.5,
-        discount_factor=0.9,
-        seed=1,
-    )
-    state = (1, 0, 1, 0)
-    action = Direction.RIGHT
-    agent.update(state, action, 10.0, (0, 0, 1, 0), [], terminal=True)
-    assert agent.q_values[state][action] == 5.0
-
-    agent.save()
-    saved = json.loads(table.read_text(encoding="utf-8"))
-    assert saved["1,0,1,0"]["1,0"] == 5.0
-
-    restored = QLearningAgent(q_table_path=str(table), epsilon=0, seed=1)
-    assert restored.q_values[state][action] == 5.0
-
-
-def test_autonomous_agent_only_selects_legal_actions(tmp_path):
-    maze = Maze(["#####", "#...#", "#####"])
-    agent = PacmanAI(q_table_path=str(tmp_path / "q.json"), seed=4)
-
-    action = agent.choose_action(maze, (1, 1), [])
-
-    assert action in (Direction.RIGHT,)
-    assert agent.previous_state is not None
-    assert agent.previous_action == action
-
-
-def test_autonomous_agent_uses_ghost_positions_and_directions(tmp_path):
-    maze = Maze(["#######", "#.....#", "#######"])
-    agent = PacmanAI(q_table_path=str(tmp_path / "q.json"), seed=4)
-    ghost = Ghost(4, 1, ghost_type=GhostType.HUNTER)
-
-    action = agent.choose_action(maze, (1, 1), [ghost])
-
-    assert action in (Direction.RIGHT,)
-
-
-def test_ai_game_mode_moves_pacman_and_learns(tmp_path):
+def test_minimax_chooses_escape_from_a_closing_ghost():
     maze = Maze(
         [
             "#########",
-            "#P......#",
+            "#.......#",
+            "#..PG...#",
             "#.......#",
             "#########",
         ]
     )
-    state = GameState(maze, ai_enabled=True, ai_q_table_path=str(tmp_path / "q.json"))
-    state.ghosts.clear()
-    starting_x = state.pacman.x
+    agent = PacmanAI(minimax_depth=4)
+    ghost = Ghost(*maze.ghost_spawns[0])
+    ghost_position = (ghost.x, ghost.y, ghost.current_dir)
 
-    for _ in range(45):
+    action = agent.choose_action(
+        maze,
+        maze.pacman_spawn,
+        [ghost],
+        current_direction=Direction.NONE,
+    )
+
+    assert action != Direction.RIGHT
+    assert (ghost.x, ghost.y, ghost.current_dir) == ghost_position
+    assert agent.minimax.nodes_visited > 0
+
+
+def test_minimax_takes_a_power_pellet_instead_of_avoiding_ghost_forever():
+    maze = Maze(["#######", "#..o..#", "#######"])
+    planner = MinimaxPlanner(depth=3)
+
+    action, scores = planner.choose_action(
+        maze,
+        (2, 1),
+        [(3, 1)],
+    )
+
+    assert action == Direction.RIGHT
+    assert scores[action] > -MINIMAX_GHOST_COLLISION_PENALTY
+
+
+def test_minimax_rewards_pellet_progress_and_level_completion():
+    maze = Maze(["#######", "#P...##", "#######"])
+    planner = MinimaxPlanner(depth=3)
+    action, _ = planner.choose_action(maze, maze.pacman_spawn, [])
+
+    assert action == Direction.RIGHT
+
+    winning_state = SearchState(
+        pacman=(4, 1),
+        ghosts=(),
+        dots=frozenset(),
+        power_pellets=frozenset(),
+        power_active=False,
+        lives=3,
+        recent_tiles=(),
+    )
+    assert planner.evaluate_state(maze, winning_state) > 0
+
+
+def test_minimax_penalizes_recently_repeated_positions():
+    maze = Maze(["#####", "#...#", "#####"])
+    planner = MinimaxPlanner(depth=1)
+    state = SearchState(
+        pacman=(2, 1),
+        ghosts=(),
+        dots=frozenset({(3, 1)}),
+        power_pellets=frozenset(),
+        power_active=False,
+        lives=3,
+        recent_tiles=(),
+    )
+    repeated_state = SearchState(
+        pacman=state.pacman,
+        ghosts=state.ghosts,
+        dots=state.dots,
+        power_pellets=state.power_pellets,
+        power_active=state.power_active,
+        lives=state.lives,
+        recent_tiles=((2, 1), (2, 1)),
+    )
+
+    assert planner.evaluate_state(maze, repeated_state) < planner.evaluate_state(
+        maze, state
+    )
+
+
+def test_ai_game_completes_a_small_level_without_ghosts():
+    maze = Maze(
+        [
+            "########",
+            "#P....##",
+            "########",
+        ]
+    )
+    state = GameState(maze, ai_enabled=True, minimax_depth=4)
+    state.ghosts.clear()
+
+    for _ in range(600):
+        state.update()
+        if state.mode.name == "VICTORY":
+            break
+
+    assert state.mode.name == "VICTORY"
+    assert state.lives == 3
+    assert state.maze.remaining_dots_count() == 0
+
+
+def test_ai_game_completes_the_default_level():
+    state = GameState(ai_enabled=True, minimax_depth=6)
+
+    for _ in range(6000):
+        state.update()
+        if state.mode.name != "PLAYING":
+            break
+
+    assert state.mode.name == "VICTORY"
+    assert state.lives > 0
+    assert state.maze.remaining_dots_count() == 0
+
+
+def test_ai_game_survives_the_first_escape_from_a_closing_ghost():
+    maze = Maze(
+        [
+            "#########",
+            "#.......#",
+            "#..PG...#",
+            "#.......#",
+            "#########",
+        ]
+    )
+    state = GameState(maze, ai_enabled=True, minimax_depth=4)
+
+    for _ in range(12):
         state.update()
 
-    assert state.ai_enabled
-    assert state.pacman.x > starting_x
-    assert state.ai_player.learner.q_values
-    state.save_ai()
-    assert (tmp_path / "q.json").exists()
+    assert state.lives == 3
+    assert (state.pacman.col, state.pacman.row) != maze.pacman_spawn
 
 
-def test_pacman_movement_stops_at_wall_and_reaches_exact_tile_centers():
+def test_pacman_movement_stops_at_walls_and_reaches_tile_centers():
     maze = Maze(["#####", "#...#", "#####"])
     pacman = Pacman(1, 1)
     pacman.set_next_direction(Direction.RIGHT)
@@ -127,69 +197,14 @@ def test_pacman_movement_stops_at_wall_and_reaches_exact_tile_centers():
     assert pacman.x == 3.5 * TILE_SIZE
 
 
-def test_minimax_respects_legal_actions_and_prunes_branches():
-    maze = Maze(
-        [
-            "#######",
-            "#.....#",
-            "#.....#",
-            "#.....#",
-            "#######",
-        ]
-    )
-    pacman = Pacman(3, 2)
-    ghost = Ghost(5, 2, ghost_type=GhostType.HUNTER)
-    planner = MinimaxPlanner(depth=2, ghost_branch_limit=2)
-    planner._distance_cache.clear()
-    route = RiskAwareAStar().route_to_pellet(maze, (3, 2), [(ghost.col, ghost.row)])
-
+def test_minimax_depth_six_is_responsive_on_the_default_maze():
+    maze = Maze()
+    planner = MinimaxPlanner(depth=6)
     action, scores = planner.choose_action(
         maze,
-        (3, 2),
-        [ghost],
-        pacman.current_dir,
-        route,
+        maze.pacman_spawn,
+        [Ghost(*spawn) for spawn in maze.ghost_spawns],
     )
 
-    assert action in (Direction.UP, Direction.DOWN, Direction.LEFT, Direction.RIGHT)
-    assert set(scores) == {
-        Direction.UP,
-        Direction.DOWN,
-        Direction.LEFT,
-        Direction.RIGHT,
-    }
-    assert planner.nodes_visited > 0
-    assert planner.pruned_branches > 0
-
-
-def test_minimax_avoids_immediate_ghost_collision_but_uses_power_pellet():
-    maze = Maze(["#######", "#....o#", "#######"])
-    ghost = Ghost(3, 1, ghost_type=GhostType.HUNTER)
-    planner = MinimaxPlanner(depth=1)
-    route = [(2, 1), (3, 1), (4, 1)]
-
-    action, scores = planner.choose_action(
-        maze,
-        (2, 1),
-        [ghost],
-        Direction.NONE,
-        route,
-    )
-    assert action == Direction.LEFT
-    assert scores[Direction.RIGHT] == -1000
-
-    power_maze = Maze(["#######", "#..o..#", "#######"])
-    power_maze.dots.remove((2, 1))
-    power_ghost = Ghost(3, 1, ghost_type=GhostType.HUNTER)
-    power_route = RiskAwareAStar().route_to_pellet(
-        power_maze, (2, 1), [(power_ghost.col, power_ghost.row)]
-    )
-    power_action, power_scores = planner.choose_action(
-        power_maze,
-        (2, 1),
-        [power_ghost],
-        Direction.NONE,
-        power_route,
-    )
-    assert power_action == Direction.RIGHT
-    assert power_scores[Direction.RIGHT] > -1000
+    assert action in scores
+    assert planner.nodes_visited < 100_000

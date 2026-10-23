@@ -10,6 +10,7 @@ from settings import (
     FPS,
     Direction,
     MINIMAX_SEARCH_DEPTH,
+    GHOST_MINIMAX_SEARCH_DEPTH,
 )
 from game_state import GameState
 from renderer import Renderer
@@ -22,22 +23,30 @@ def main():
     parser.add_argument(
         "--ai",
         action="store_true",
-        help="Use autonomous A*, Minimax, and Q-learning Pac-Man",
+        help="Use autonomous Minimax Pac-Man",
     )
     parser.add_argument(
         "--minimax-depth",
         type=int,
         default=MINIMAX_SEARCH_DEPTH,
-        help="AI lookahead depth in Pac-Man turns (default: %(default)s)",
+        help="Pac-Man Minimax lookahead depth in plies (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--ghost-minimax-depth",
+        type=int,
+        default=GHOST_MINIMAX_SEARCH_DEPTH,
+        help="Ghost Minimax lookahead depth in plies (default: %(default)s)",
     )
     parser.add_argument(
         "--ai-debug",
         action="store_true",
-        help="Print AI target, candidate scores, chosen move, and pruning counts",
+        help="Print Minimax candidate scores, node count, and chosen move",
     )
     args = parser.parse_args()
     if args.minimax_depth < 1:
         parser.error("--minimax-depth must be at least 1")
+    if args.ghost_minimax_depth < 1:
+        parser.error("--ghost-minimax-depth must be at least 1")
 
     # Initialize Pygame
     pygame.init()
@@ -50,6 +59,7 @@ def main():
         ai_enabled=args.ai,
         minimax_depth=args.minimax_depth,
         ai_debug=args.ai_debug,
+        ghost_minimax_depth=args.ghost_minimax_depth,
     )
     renderer = Renderer(screen)
 
@@ -91,7 +101,6 @@ def main():
 
         clock.tick(FPS)
 
-    game_state.save_ai()
     pygame.quit()
     sys.exit(0)
 
