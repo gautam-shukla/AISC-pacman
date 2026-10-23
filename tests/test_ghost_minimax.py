@@ -7,7 +7,7 @@ from settings import Direction
 
 def test_ghost_pursues_pacman_in_a_safe_corridor():
     maze = Maze(["#####", "#...#", "#####"])
-    planner = GhostMinimaxPlanner(depth=4)
+    planner = GhostMinimaxPlanner(depth=4, random_seed=4)
 
     action = planner.choose_action(
         maze,
@@ -90,7 +90,7 @@ def test_powered_ghost_does_not_reverse_back_and_forth_at_dead_end():
             "#########",
         ]
     )
-    planner = GhostMinimaxPlanner(depth=4)
+    planner = GhostMinimaxPlanner(depth=4, random_seed=4)
 
     first_action = planner.choose_action(
         maze,
@@ -202,6 +202,55 @@ def test_ghost_minimax_penalizes_clustering_with_other_ghosts():
     )
 
     assert separated_score > clustered_score
+
+
+def test_ghost_tie_breaking_is_seeded_and_stays_with_equal_scores():
+    maze = Maze(
+        [
+            "#########",
+            "#.......#",
+            "#.#####.#",
+            "#.#...#.#",
+            "#.#.#.#.#",
+            "#...#...#",
+            "#########",
+        ]
+    )
+    actions = []
+    for seed in (0, 0, 1):
+        planner = GhostMinimaxPlanner(depth=4, random_seed=seed)
+        actions.append(
+            planner.choose_action(
+                maze,
+                pacman=(1, 1),
+                ghost=(3, 4),
+                ghost_direction=Direction.UP,
+                power_active=True,
+            )
+        )
+        assert len(set(planner.last_scores.values())) == 1
+
+    assert actions[0] == actions[1]
+    assert actions[0] != actions[2]
+
+
+def test_ghost_search_uses_current_speed_when_power_is_about_to_expire():
+    maze = Maze(["#####", "#...#", "#####"])
+    scores = []
+    for speed in (32.0, 1.0):
+        planner = GhostMinimaxPlanner(depth=1, random_seed=2)
+        planner.choose_action(
+            maze,
+            pacman=(2, 1),
+            ghost=(1, 1),
+            ghost_direction=Direction.RIGHT,
+            power_active=True,
+            power_ticks_remaining=5,
+            ghost_speed=speed,
+        )
+        scores.append(planner.last_scores[Direction.RIGHT])
+
+    assert scores == [-1000.0, 1000.0]
 
 
 def test_default_ghosts_have_separate_minimax_state_and_spread_spawns():

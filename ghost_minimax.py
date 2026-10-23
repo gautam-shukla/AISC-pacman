@@ -1,4 +1,6 @@
 """Plain Minimax decision-making for grid-based ghosts."""
+import random
+from math import ceil
 from typing import Dict, FrozenSet, Sequence, Tuple
 
 from maze import Maze
@@ -9,6 +11,11 @@ from settings import (
     GHOST_MINIMAX_ESCAPE_OPTION_WEIGHT,
     GHOST_MINIMAX_SEPARATION_WEIGHT,
     GHOST_MINIMAX_SEARCH_DEPTH,
+    GHOST_MINIMAX_TIE_TOLERANCE,
+    GHOST_SPEED,
+    PACMAN_SPEED,
+    POWER_PELLET_DURATION,
+    TILE_SIZE,
 )
 
 Tile = Tuple[int, int]
@@ -25,11 +32,16 @@ DIRECTIONS: Tuple[Action, ...] = (
 class GhostMinimaxPlanner:
     """Choose a ghost move against optimal Pac-Man responses using plain Minimax."""
 
-    def __init__(self, depth: int = GHOST_MINIMAX_SEARCH_DEPTH):
+    def __init__(
+        self,
+        depth: int = GHOST_MINIMAX_SEARCH_DEPTH,
+        random_seed: int | None = None,
+    ):
         if depth < 1:
             raise ValueError("Minimax depth must be at least 1")
         self.depth = depth
         self.last_scores: Dict[Action, float] = {}
+        self._random = random.Random(random_seed)
 
     @staticmethod
     def _legal_actions(
@@ -111,19 +123,26 @@ class GhostMinimaxPlanner:
         self,
         maze: Maze,
         pacman: Tile,
+        pacman_direction: Action,
         ghost: Tile,
         ghost_direction: Action,
         other_ghosts: Tuple[Tile, ...],
-        power_active: bool,
         player_lives: int,
         remaining_power_pellets: FrozenSet[Tile],
         remaining_collectibles: FrozenSet[Tile],
         remaining_depth: int,
         ghost_turn: bool,
+        power_ticks_remaining: int,
+        ghost_speed: float,
     ) -> float:
         if remaining_depth == 0:
             return self._evaluate(
-                maze, pacman, ghost, other_ghosts, power_active, player_lives
+                maze,
+                pacman,
+                ghost,
+                other_ghosts,
+                power_ticks_remaining > 0,
+                player_lives,
             )
 
         if ghost_turn:
@@ -131,66 +150,98 @@ class GhostMinimaxPlanner:
                 maze,
                 ghost,
                 ghost_direction,
-                avoid_reverse=not power_active,
+                avoid_reverse=power_ticks_remaining <= 0,
             )
             if not actions:
                 return self._evaluate(
-                    maze, pacman, ghost, other_ghosts, power_active, player_lives
+                    maze,
+                    pacman,
+                    ghost,
+                    other_ghosts,
+                    power_ticks_remaining > 0,
+                    player_lives,
                 )
 
             best_score = float("-inf")
             for action in actions:
                 next_ghost = (ghost[0] + action[0], ghost[1] + action[1])
+                next_power_ticks = max(
+                    0,
+                    power_ticks_remaining - ceil(TILE_SIZE / ghost_speed),
+                )
                 if next_ghost == pacman:
-                    score = self._terminal_score(power_active, player_lives)
+                    score = self._terminal_score(
+                        next_power_ticks > 0,
+                        player_lives,
+                    )
                 else:
                     score = self._minimax(
                         maze,
                         pacman,
+                        pacman_direction,
                         next_ghost,
                         action,
                         other_ghosts,
-                        power_active,
                         player_lives,
                         remaining_power_pellets,
                         remaining_collectibles,
                         remaining_depth - 1,
                         False,
+                        next_power_ticks,
+                        ghost_speed,
                     )
                 best_score = max(best_score, score)
             return best_score
 
-        actions = self._legal_actions(maze, pacman)
+        actions = self._legal_actions(
+            maze,
+            pacman,
+            direction=pacman_direction,
+        )
         if not actions:
             return self._evaluate(
-                maze, pacman, ghost, other_ghosts, power_active, player_lives
+                maze,
+                pacman,
+                ghost,
+                other_ghosts,
+                power_ticks_remaining > 0,
+                player_lives,
             )
 
         worst_score = float("inf")
         for action in actions:
             next_pacman = (pacman[0] + action[0], pacman[1] + action[1])
-            next_power_active = (
-                power_active or next_pacman in remaining_power_pellets
+            next_power_ticks = (
+                POWER_PELLET_DURATION
+                if next_pacman in remaining_power_pellets
+                else max(
+                    0,
+                    power_ticks_remaining - ceil(TILE_SIZE / PACMAN_SPEED),
+                )
             )
             next_pellets = remaining_power_pellets - {next_pacman}
             next_collectibles = remaining_collectibles - {next_pacman}
             if not next_collectibles:
                 score = -1000.0
             elif next_pacman in (ghost, *other_ghosts):
-                score = self._terminal_score(next_power_active, player_lives)
+                score = self._terminal_score(
+                    next_power_ticks > 0, player_lives
+                )
             else:
                 score = self._minimax(
                     maze,
                     next_pacman,
+                    action,
                     ghost,
                     ghost_direction,
                     other_ghosts,
-                    next_power_active,
                     player_lives,
                     next_pellets,
                     next_collectibles,
                     remaining_depth - 1,
                     True,
+                    next_power_ticks,
+                    ghost_speed,
                 )
             worst_score = min(worst_score, score)
         return worst_score
@@ -204,13 +255,16 @@ class GhostMinimaxPlanner:
         other_ghosts: Sequence[Tile] = (),
         power_active: bool = False,
         player_lives: int = 3,
+        power_ticks_remaining: int = 0,
+        ghost_speed: float = GHOST_SPEED,
+        pacman_direction: Action = Direction.NONE,
     ) -> Action:
         """Return the best legal first ghost move, or NONE when it is trapped."""
         actions = self._legal_actions(
             maze,
             ghost,
             ghost_direction,
-            avoid_reverse=not power_active,
+            avoid_reverse=not power_active and power_ticks_remaining <= 0,
         )
         if not actions:
             self.last_scores = {}
@@ -220,24 +274,35 @@ class GhostMinimaxPlanner:
         remaining_power_pellets = frozenset(maze.power_pellets)
         remaining_collectibles = frozenset(maze.dots | maze.power_pellets)
         remaining_collectibles -= {pacman}
+        initial_power_ticks = (
+            power_ticks_remaining
+            if power_ticks_remaining > 0
+            else POWER_PELLET_DURATION if power_active else 0
+        )
         self.last_scores = {}
         for action in actions:
             next_ghost = (ghost[0] + action[0], ghost[1] + action[1])
+            next_power_ticks = max(
+                0,
+                initial_power_ticks - ceil(TILE_SIZE / ghost_speed),
+            )
             if next_ghost == pacman:
-                score = self._terminal_score(power_active, player_lives)
+                score = self._terminal_score(next_power_ticks > 0, player_lives)
             else:
                 score = self._minimax(
                     maze,
                     pacman,
+                    pacman_direction,
                     next_ghost,
                     action,
                     static_other_ghosts,
-                    power_active,
                     player_lives,
                     remaining_power_pellets,
                     remaining_collectibles,
                     self.depth - 1,
                     False,
+                    next_power_ticks,
+                    ghost_speed,
                 )
             self.last_scores[action] = score
 
@@ -245,13 +310,6 @@ class GhostMinimaxPlanner:
         best_actions = [
             action
             for action in actions
-            if self.last_scores[action] == best_score
+            if best_score - self.last_scores[action] <= GHOST_MINIMAX_TIE_TOLERANCE
         ]
-        reverse = Direction.OPPOSITES.get(ghost_direction)
-        return max(
-            best_actions,
-            key=lambda action: (
-                action == ghost_direction,
-                action != reverse,
-            ),
-        )
+        return self._random.choice(best_actions)

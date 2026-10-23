@@ -46,7 +46,7 @@ The game is designed with a strict separation of concerns:
 - **Adaptive Difficulty**: A bounded, smoothed performance controller gradually adjusts ghost speed; the current tier is shown in the HUD.
 - **Expanded Maze**: The 21×21 base maze is surrounded by a connected collectible corridor, producing a 25×25 playable grid sized to fit the display.
 - **Safe Respawning**: Losing a life preserves score and maze progress, resets entity positions, and provides a pause plus brief collision immunity.
-- **Minimax Ghost AI**: Ghosts use plain Minimax against Pac-Man's possible tile moves. Search depth is configurable with `--ghost-minimax-depth` (default: 4 plies); other ghosts remain stationary in an individual ghost's search, matching the game's sequential ghost updates. Power pellets reverse the ghost's evaluation so vulnerable ghosts avoid Pac-Man.
+- **Minimax Ghost AI**: Each ghost has its own plain Minimax planner and chooses from its live position, heading, Pac-Man's current tile, power duration, and the other ghosts' current tiles. Search depth is configurable with `--ghost-minimax-depth` (default: 4 plies). During an individual ghost's search, other ghosts are held at their current positions to reflect the sequential update architecture.
 - **Independent Ghost Spacing**: Ghosts retain separate Minimax planners and positions; their evaluation discourages clustering without forcing a different move when it would be illegal or tactically worse.
 - **Autonomous Pac-Man**: `--ai` uses plain Minimax to balance survival, escape options, power pellets, and clearing the remaining collectibles.
 - **Automatic Level Progression**: Clearing Level 1 pauses play for a brief completion message, then loads a distinct Level 2 while preserving score and lives.
@@ -70,14 +70,14 @@ The game is designed with a strict separation of concerns:
 ### B. Minimax Ghost Controller
 Ghost movement is selected by `GhostMinimaxPlanner` in `ghost_minimax.py`. Each ghost is the MAX player and tries to catch Pac-Man; Pac-Man is the MIN player and chooses the response that avoids capture. Search simulates legal cardinal moves on the existing maze, alternates one ghost move with one Pac-Man move, and evaluates the resulting state using Manhattan distance, capture/lives, dead-end, Pac-Man escape options, and terminal collectible completion. Search uses plain Minimax without alpha-beta pruning or pathfinding.
 
-Decisions are recalculated at tile centers, preserving the existing movement timing. Reversals are avoided when another legal move exists, while frightened ghosts can reverse to escape. When multiple ghosts exist, only the active ghost moves in the search; the other ghosts' current tile positions are held fixed, in keeping with the game's sequential update loop.
+Decisions are recalculated at tile centers, preserving the existing movement timing. Reversals are avoided when another legal move exists, while frightened ghosts can reverse to escape. Equal or nearly equal moves use seeded tie-breaking; randomness never selects a meaningfully lower-scoring action.
 
 Ghost colors and ghost-type assignments remain unchanged, but role-specific A* targeting and patrol routing no longer select ghost moves.
 
 ### C. Autonomous Pac-Man Minimax
 When `--ai` is enabled, Pac-Man is MAX and active ghosts are MIN. The search simulates Pac-Man actions followed by each ghost's legal move in the same sequential order as the game update; frightened ghosts instead flee as in the live game. It uses plain Minimax without pruning, A*, BFS, or reinforcement learning. The default depth is six plies and can be changed with `--minimax-depth`.
 
-The immutable search state tracks Pac-Man and ghost positions, remaining dots and power pellets, vulnerability, lives, and recent Pac-Man tiles. The evaluation assigns terminal priority to level completion and capture, then scores collectible progress, distance to remaining collectibles, ghost danger, escape options, dead ends, and repeated positions. Immediate root moves also account for pixel-level collisions that can occur before the next tile-center decision. Only the selected legal action is applied to the live game.
+The immutable search state tracks Pac-Man and ghost positions, headings and current speeds, remaining dots and power pellets, remaining power duration, lives, and recent Pac-Man tiles. The evaluation assigns terminal priority to level completion and capture, then scores collectible progress, nearest collectible distance, directional ghost threat, escape options, dead ends, and repeated positions. Immediate root moves also account for pixel-level collisions that can occur before the next tile-center decision. Power duration expires during simulated moves, and ghosts caught during the search return to their spawn tiles. After a death, Pac-Man's recent route is retained while its next decision is invalidated, so the same respawn does not erase its loop-avoidance context.
 
 ---
 
@@ -177,7 +177,7 @@ Configure the ghost search depth independently:
 ```powershell
 python main.py --ghost-minimax-depth 4
 ```
-The depth is measured in plies (one ghost or Pac-Man move per ply), and must be at least 1. The default is 4. Manual play remains the default; use the arrow keys or WASD to steer Pac-Man.
+The depth is measured in plies (one ghost or Pac-Man move per ply), and must be at least 1. The default is 4. Add `--seed N` to reproduce tie-breaking (for example, `python main.py --ai --seed 17`); without it, each session gets an independently seeded sequence. Manual play remains the default; use the arrow keys or WASD to steer Pac-Man.
 
 ### Command-Line Arguments
 - Run headless smoke tests:

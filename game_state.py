@@ -1,6 +1,7 @@
 """
 game_state.py - Core game loop state, scoring, lives, and collision resolution.
 """
+import random
 from typing import List, Optional
 import pygame
 from settings import (
@@ -39,10 +40,13 @@ class GameState:
         minimax_depth: int = MINIMAX_SEARCH_DEPTH,
         ai_debug: bool = False,
         ghost_minimax_depth: int = GHOST_MINIMAX_SEARCH_DEPTH,
+        random_seed: int | None = None,
     ):
         self.maze = maze or Maze()
         self.level_manager = LevelManager(self.maze.layout_strings)
         self.ghost_minimax_depth = ghost_minimax_depth
+        self.random_seed = random_seed
+        self._random = random.Random(random_seed)
         self.score = 0
         self.lives = INITIAL_LIVES
         self.level = 1
@@ -64,6 +68,7 @@ class GameState:
             self.ai_player = PacmanAI(
                 minimax_depth=minimax_depth,
                 debug=ai_debug,
+                random_seed=self._random.getrandbits(64),
             )
 
         self.death_pause_ticks = 0
@@ -85,7 +90,9 @@ class GameState:
         self.respawn_invulnerability_ticks = 0
         self.level_transition_ticks = 0
         self._reset_difficulty_tracking()
+        self._random = random.Random(self.random_seed)
         if self.ai_player is not None:
+            self.ai_player.reseed(self._random.getrandbits(64))
             self.ai_player.reset_history()
         self._load_level(1)
         self.mode = GameMode.PLAYING
@@ -103,6 +110,7 @@ class GameState:
                     g_row,
                     ghost_type=ghost_types[index % len(ghost_types)],
                     minimax_depth=self.ghost_minimax_depth,
+                    random_seed=self._random.getrandbits(64),
                 )
             )
 
@@ -267,6 +275,7 @@ class GameState:
             power_active=self.power_ticks_remaining > 0,
             current_direction=self.pacman.current_dir,
             lives=self.lives,
+            power_ticks_remaining=self.power_ticks_remaining,
         )
         if action != (0, 0):
             self.pacman.set_next_direction(action)
@@ -286,7 +295,7 @@ class GameState:
             self.mode = GameMode.GAME_OVER
         else:
             if self.ai_player is not None:
-                self.ai_player.reset_history()
+                self.ai_player.last_decision_tile = None
             self.reset_positions()
             self.death_pause_ticks = RESPAWN_PAUSE_TICKS
             self.respawn_invulnerability_ticks = RESPAWN_INVULNERABILITY_TICKS

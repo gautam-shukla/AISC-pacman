@@ -42,6 +42,12 @@ def main():
         action="store_true",
         help="Print Minimax candidate scores, node count, and chosen move",
     )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help="Seed AI tie-breaking for reproducible gameplay",
+    )
     args = parser.parse_args()
     if args.minimax_depth < 1:
         parser.error("--minimax-depth must be at least 1")
@@ -60,6 +66,7 @@ def main():
         minimax_depth=args.minimax_depth,
         ai_debug=args.ai_debug,
         ghost_minimax_depth=args.ghost_minimax_depth,
+        random_seed=args.seed,
     )
     renderer = Renderer(screen)
 

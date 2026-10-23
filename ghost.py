@@ -26,6 +26,7 @@ from settings import (
     GhostState,
     GhostType,
     GHOST_MINIMAX_SEARCH_DEPTH,
+    POWER_PELLET_DURATION,
 )
 
 DirectionVector = Tuple[int, int]
@@ -48,6 +49,7 @@ class Ghost:
         color: Optional[Tuple[int, int, int]] = None,
         ghost_type: GhostType = GhostType.HUNTER,
         minimax_depth: int = GHOST_MINIMAX_SEARCH_DEPTH,
+        random_seed: int | None = None,
     ):
         self.spawn_col = col
         self.spawn_row = row
@@ -55,7 +57,7 @@ class Ghost:
         self.row = row
         self.x = (col + 0.5) * TILE_SIZE
         self.y = (row + 0.5) * TILE_SIZE
-        self.current_dir: DirectionVector = Direction.LEFT
+        self.current_dir: DirectionVector = Direction.NONE
         self.ghost_type = ghost_type
         self.base_color = color if color is not None else GHOST_COLORS[ghost_type]
         self.color = self.base_color
@@ -66,7 +68,10 @@ class Ghost:
             if ghost_type in (GhostType.PATROL, GhostType.GUARD)
             else GhostState.CHASE
         )
-        self.minimax = GhostMinimaxPlanner(depth=minimax_depth)
+        self.minimax = GhostMinimaxPlanner(
+            depth=minimax_depth,
+            random_seed=random_seed,
+        )
 
     def get_legal_directions(
         self, current_col: int, current_row: int, maze: Maze
@@ -145,6 +150,11 @@ class Ghost:
                     other_ghosts,
                     power_active=frightened,
                     player_lives=player_lives,
+                    power_ticks_remaining=(
+                        round(protection * POWER_PELLET_DURATION)
+                    ),
+                    ghost_speed=self.speed,
+                    pacman_direction=pacman.current_dir,
                 )
 
         if pacman is not None:
@@ -194,7 +204,7 @@ class Ghost:
         self.row = self.spawn_row
         self.x = (self.col + 0.5) * TILE_SIZE
         self.y = (self.row + 0.5) * TILE_SIZE
-        self.current_dir = Direction.LEFT
+        self.current_dir = Direction.NONE
         self.state = (
             GhostState.PATROL
             if self.ghost_type in (GhostType.PATROL, GhostType.GUARD)
