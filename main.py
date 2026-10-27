@@ -38,6 +38,12 @@ def main():
         help="Ghost Minimax lookahead depth in plies (default: %(default)s)",
     )
     parser.add_argument(
+        "--ghost-algo",
+        choices=["minimax", "sa", "alternate"],
+        default="minimax",
+        help="Ghost AI algorithm: minimax (default), sa (Simulated Annealing), or alternate (Round 1: Minimax, Round 2: SA)",
+    )
+    parser.add_argument(
         "--ai-debug",
         action="store_true",
         help="Print Minimax candidate scores, node count, and chosen move",
@@ -67,6 +73,7 @@ def main():
         ai_debug=args.ai_debug,
         ghost_minimax_depth=args.ghost_minimax_depth,
         random_seed=args.seed,
+        ghost_algo=args.ghost_algo,
     )
     renderer = Renderer(screen)
 
@@ -89,6 +96,8 @@ def main():
                     game_state.toggle_pause()
                 elif event.key == pygame.K_r:
                     game_state.restart_game()
+                elif event.key == pygame.K_TAB:
+                    game_state.toggle_ghost_algo()
                 # Direction controls (Arrow keys + WASD) are reserved for manual play.
                 elif not game_state.ai_enabled and event.key in (pygame.K_UP, pygame.K_w):
                     game_state.pacman.set_next_direction(Direction.UP)

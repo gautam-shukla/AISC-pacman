@@ -93,14 +93,19 @@ class Renderer:
         dots_left = state.maze.remaining_dots_count()
         total_dots = state.maze.total_dots_count()
         progress_text = self.font_sub.render(f"DOTS: {dots_left}/{total_dots}", True, COLOR_TEXT_DIM)
-        self.screen.blit(progress_text, (SCREEN_WIDTH // 2 - progress_text.get_width() // 2, 36))
+        self.screen.blit(progress_text, (SCREEN_WIDTH - 170, 38))
 
-        difficulty_label = self.font_sub.render(
-            f"{'AI' if state.ai_enabled else 'MANUAL'} | DIFFICULTY: {state.difficulty_label}",
-            True,
-            COLOR_TEXT_DIM,
+        # Status: What Pac-Man and Ghosts are following currently
+        status_text = (
+            f"PAC-MAN: {state.pacman_current_action_label} | "
+            f"GHOSTS: {state.ghost_algo_label} [{state.ghost_current_target}]"
         )
-        self.screen.blit(difficulty_label, (20, 38))
+        status_label = self.font_sub.render(
+            status_text,
+            True,
+            (140, 210, 255),
+        )
+        self.screen.blit(status_label, (20, 38))
 
         # Lives icon representation
         lives_label = self.font_hud.render("LIVES:", True, COLOR_TEXT)

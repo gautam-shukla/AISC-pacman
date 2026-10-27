@@ -41,10 +41,12 @@ class GameState:
         ai_debug: bool = False,
         ghost_minimax_depth: int = GHOST_MINIMAX_SEARCH_DEPTH,
         random_seed: int | None = None,
+        ghost_algo: str = "minimax",
     ):
         self.maze = maze or Maze()
         self.level_manager = LevelManager(self.maze.layout_strings)
         self.ghost_minimax_depth = ghost_minimax_depth
+        self.ghost_algo = ghost_algo
         self.random_seed = random_seed
         self._random = random.Random(random_seed)
         self.score = 0
@@ -97,12 +99,67 @@ class GameState:
         self._load_level(1)
         self.mode = GameMode.PLAYING
 
+    @property
+    def current_ghost_algo(self) -> str:
+        """Return the active ghost algorithm for the current round/level."""
+        if self.ghost_algo == "alternate":
+            # Round 1 / Level 1: Minimax; Round 2 / Level 2: Simulated Annealing
+            return "minimax" if self.level % 2 == 1 else "sa"
+        return self.ghost_algo
+
+    @property
+    def ghost_algo_label(self) -> str:
+        """Return human-readable label of active ghost algorithm."""
+        algo = self.current_ghost_algo
+        name = "Simulated Annealing" if algo == "sa" else "Minimax Alpha-Beta"
+        if self.ghost_algo == "alternate":
+            next_name = "SA" if algo == "minimax" else "Minimax"
+            return f"[Round {self.level}: {name} -> Next: {next_name}]"
+        return name
+
+    def toggle_ghost_algo(self) -> None:
+        """Dynamically toggle ghost AI algorithm between Minimax and Simulated Annealing in real time."""
+        target_algo = "sa" if self.current_ghost_algo == "minimax" else "minimax"
+        self.ghost_algo = target_algo
+        for ghost in self.ghosts:
+            ghost.set_algo(target_algo, self.ghost_minimax_depth, random_seed=self._random.getrandbits(64))
+
+    @property
+    def ghost_current_target(self) -> str:
+        """Describe what the ghosts are actively doing right now."""
+        if self.power_ticks_remaining > 0:
+            secs = max(0.0, self.power_ticks_remaining / 60.0)
+            return f"Fleeing Pac-Man ({secs:.1f}s)"
+        algo = self.current_ghost_algo
+        if algo == "sa":
+            temp_val = getattr(self.ghosts[0].planner, "temp", None) if self.ghosts else None
+            temp_str = f" [T={temp_val:.1f}]" if temp_val is not None else ""
+            return f"Pursuing Pac-Man{temp_str}"
+        return "Pursuing Pac-Man"
+
+    @property
+    def pacman_current_action_label(self) -> str:
+        """Describe what Pac-Man is currently pursuing/focusing on."""
+        if not self.ai_enabled:
+            return "Player Control"
+        if self.power_ticks_remaining > 0:
+            return "Hunting Ghosts!"
+        if self.ghosts:
+            min_dist = min(
+                abs(self.pacman.col - g.col) + abs(self.pacman.row - g.row)
+                for g in self.ghosts
+            )
+            if min_dist <= 2:
+                return f"Evading Ghost ({min_dist} tiles away!)"
+        return "Collecting Dots"
+
     def _create_entities(self) -> None:
         p_col, p_row = self.maze.pacman_spawn
         self.pacman = Pacman(p_col, p_row)
 
         self.ghosts: List[Ghost] = []
         ghost_types = list(GhostType)
+        algo = self.current_ghost_algo
         for index, (g_col, g_row) in enumerate(self.maze.ghost_spawns):
             self.ghosts.append(
                 Ghost(
@@ -111,6 +168,7 @@ class GameState:
                     ghost_type=ghost_types[index % len(ghost_types)],
                     minimax_depth=self.ghost_minimax_depth,
                     random_seed=self._random.getrandbits(64),
+                    algo=algo,
                 )
             )
 

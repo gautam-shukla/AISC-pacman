@@ -1,10 +1,11 @@
-"""Minimax-controlled ghosts with wall-safe movement and frightened behavior."""
+"""Ghosts with Minimax / Simulated Annealing movement and frightened behavior."""
 import random
 from typing import List, Optional, Sequence, Tuple
 
 import pygame
 
 from ghost_minimax import GhostMinimaxPlanner, Tile
+from ghost_sa import GhostSimulatedAnnealingPlanner
 from maze import Maze
 from pacman import Pacman
 from settings import (
@@ -40,7 +41,7 @@ GHOST_COLORS = {
 
 
 class Ghost:
-    """A Minimax-controlled ghost with the existing visual role and flee state."""
+    """An AI-controlled ghost supporting Minimax and Simulated Annealing."""
 
     def __init__(
         self,
@@ -50,6 +51,7 @@ class Ghost:
         ghost_type: GhostType = GhostType.HUNTER,
         minimax_depth: int = GHOST_MINIMAX_SEARCH_DEPTH,
         random_seed: int | None = None,
+        algo: str = "minimax",
     ):
         self.spawn_col = col
         self.spawn_row = row
@@ -68,10 +70,28 @@ class Ghost:
             if ghost_type in (GhostType.PATROL, GhostType.GUARD)
             else GhostState.CHASE
         )
-        self.minimax = GhostMinimaxPlanner(
-            depth=minimax_depth,
-            random_seed=random_seed,
-        )
+        self.algo = algo
+        if algo == "sa":
+            self.planner = GhostSimulatedAnnealingPlanner(random_seed=random_seed)
+        else:
+            self.planner = GhostMinimaxPlanner(
+                depth=minimax_depth,
+                random_seed=random_seed,
+            )
+        # Backward-compatible property alias
+        self.minimax = self.planner
+
+    def set_algo(self, algo: str, depth: int = GHOST_MINIMAX_SEARCH_DEPTH, random_seed: int | None = None) -> None:
+        """Dynamically switch between Minimax and Simulated Annealing."""
+        self.algo = algo
+        if algo == "sa":
+            self.planner = GhostSimulatedAnnealingPlanner(random_seed=random_seed)
+        else:
+            self.planner = GhostMinimaxPlanner(
+                depth=depth,
+                random_seed=random_seed,
+            )
+        self.minimax = self.planner
 
     def get_legal_directions(
         self, current_col: int, current_row: int, maze: Maze
@@ -142,7 +162,7 @@ class Ghost:
                     * (1.0 - lives_relief)
                     * difficulty_multiplier
                 )
-                self.current_dir = self.minimax.choose_action(
+                self.current_dir = self.planner.choose_action(
                     maze,
                     player_tile,
                     (self.col, self.row),
@@ -212,3 +232,5 @@ class Ghost:
         )
         self.color = self.base_color
         self.speed = GHOST_SPEED
+        if hasattr(self.planner, "reset"):
+            self.planner.reset()
