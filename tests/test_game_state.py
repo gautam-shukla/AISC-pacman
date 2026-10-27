@@ -2,6 +2,7 @@
 test_game_state.py - Unit tests for Phase 2 gameplay rules, collisions, scoring, and win/loss states.
 """
 import os
+from collections import deque
 import pytest
 
 # Ensure headless execution in CI / terminal
@@ -30,7 +31,22 @@ from pacman import Pacman
 from ghost import Ghost
 from game_state import GameState
 from level_manager import LEVEL_TWO_LAYOUT
-from pathfinding import distances_from
+
+
+def _reachable_tiles(maze: Maze, start: tuple[int, int]) -> set[tuple[int, int]]:
+    """Compute reachable walkable tiles from start using simple BFS."""
+    if not maze.is_walkable(*start):
+        return set()
+    visited = {start}
+    frontier = deque([start])
+    while frontier:
+        cx, cy = frontier.popleft()
+        for dx, dy in ((0, -1), (0, 1), (-1, 0), (1, 0)):
+            nbr = (cx + dx, cy + dy)
+            if maze.is_walkable(*nbr) and nbr not in visited:
+                visited.add(nbr)
+                frontier.append(nbr)
+    return visited
 
 
 # Small simple 5x5 test maze layout
@@ -230,8 +246,8 @@ def test_level_two_layout_has_valid_reachable_collectibles_and_spawns():
         for tile in level_two.dots | level_two.power_pellets
     )
     assert level_two.total_dots_count() > 0
-    reachable = distances_from(level_two, level_two.pacman_spawn)
-    assert level_two.dots | level_two.power_pellets <= reachable.keys()
+    reachable = _reachable_tiles(level_two, level_two.pacman_spawn)
+    assert level_two.dots | level_two.power_pellets <= reachable
 
 
 def test_clearing_level_two_triggers_final_victory(game_state):

@@ -1,4 +1,4 @@
-"""Plain Minimax decision-making for autonomous Pac-Man."""
+"""Minimax decision-making with Alpha-Beta Pruning for autonomous Pac-Man."""
 from dataclasses import dataclass, replace
 from math import ceil
 import random
@@ -56,7 +56,7 @@ class SearchState:
 
 
 class MinimaxPlanner:
-    """Search Pac-Man MAX moves and sequential ghost MIN moves without pruning."""
+    """Search Pac-Man MAX moves and sequential ghost MIN moves with Alpha-Beta Pruning."""
 
     def __init__(
         self,
@@ -67,6 +67,7 @@ class MinimaxPlanner:
             raise ValueError("Minimax depth must be at least 1")
         self.depth = depth
         self.nodes_visited = 0
+        self.pruned_branches = 0
         self.last_scores: Dict[Action, float] = {}
         self._random = random.Random(random_seed)
 
@@ -145,6 +146,13 @@ class MinimaxPlanner:
             if not isinstance(ghost, Ghost):
                 continue
             dx, dy = ghost.current_dir
+            if dx == 0 and dy == 0:
+                p_dx = 1 if pacman[0] > ghost.col else -1 if pacman[0] < ghost.col else 0
+                p_dy = 1 if pacman[1] > ghost.row else -1 if pacman[1] < ghost.row else 0
+                if p_dx != 0 and maze.is_walkable(ghost.col + p_dx, ghost.row):
+                    dx, dy = p_dx, 0
+                elif p_dy != 0 and maze.is_walkable(ghost.col, ghost.row + p_dy):
+                    dx, dy = 0, p_dy
             next_col, next_row = ghost.col + dx, ghost.row + dy
             if not maze.is_walkable(next_col, next_row):
                 dx, dy = 0, 0
@@ -345,6 +353,8 @@ class MinimaxPlanner:
         state: SearchState,
         remaining_depth: int,
         ghost_index: int,
+        alpha: float = float("-inf"),
+        beta: float = float("inf"),
     ) -> float:
         self.nodes_visited += 1
         if not state.dots and not state.power_pellets:
@@ -370,13 +380,17 @@ class MinimaxPlanner:
                     score = self._death_score(next_state.lives)
                 else:
                     score = self._minimax(
-                        maze, next_state, remaining_depth - 1, 0
+                        maze, next_state, remaining_depth - 1, 0, alpha, beta
                     )
                     if next_state.pacman in state.dots:
                         score += MINIMAX_COLLECTIBLE_REWARD
                     if next_state.pacman in state.power_pellets:
                         score += MINIMAX_POWER_PELLET_REWARD
                 best_score = max(best_score, score)
+                alpha = max(alpha, best_score)
+                if beta <= alpha:
+                    self.pruned_branches += 1
+                    break
             return best_score
 
         ghost = state.ghosts[ghost_index]
@@ -388,7 +402,7 @@ class MinimaxPlanner:
         )
         if not actions:
             return self._minimax(
-                maze, state, remaining_depth, ghost_index + 1
+                maze, state, remaining_depth, ghost_index + 1, alpha, beta
             )
 
         if state.power_ticks_remaining > 0:
@@ -403,9 +417,13 @@ class MinimaxPlanner:
                     score = self._death_score(state.lives)
                 else:
                     score = self._minimax(
-                        maze, next_state, remaining_depth - 1, ghost_index + 1
+                        maze, next_state, remaining_depth - 1, ghost_index + 1, alpha, beta
                     )
                 best_score = max(best_score, score)
+                alpha = max(alpha, best_score)
+                if beta <= alpha:
+                    self.pruned_branches += 1
+                    break
             return best_score
 
         worst_score = float("inf")
@@ -415,9 +433,13 @@ class MinimaxPlanner:
                 score = self._death_score(state.lives)
             else:
                 score = self._minimax(
-                    maze, next_state, remaining_depth - 1, ghost_index + 1
+                    maze, next_state, remaining_depth - 1, ghost_index + 1, alpha, beta
                 )
             worst_score = min(worst_score, score)
+            beta = min(beta, worst_score)
+            if beta <= alpha:
+                self.pruned_branches += 1
+                break
         return worst_score
 
     def choose_action(
@@ -432,6 +454,7 @@ class MinimaxPlanner:
         power_ticks_remaining: int = 0,
     ) -> Tuple[Action, Dict[Action, float]]:
         self.nodes_visited = 0
+        self.pruned_branches = 0
         ghost_states = self._snapshot(ghosts)
         legal = self._legal_actions(
             maze,
@@ -458,6 +481,9 @@ class MinimaxPlanner:
             recent_tiles=recent_tiles[-HISTORY_LENGTH:],
         )
         scores: Dict[Action, float] = {}
+        alpha = float("-inf")
+        beta = float("inf")
+
         for action in legal:
             next_state = self._move_pacman(state, action)
             if self._first_step_collision(
@@ -480,13 +506,17 @@ class MinimaxPlanner:
                 score = self._death_score(lives)
             else:
                 score = self._minimax(
-                    maze, next_state, self.depth - 1, 0
+                    maze, next_state, self.depth - 1, 0, alpha, beta
                 )
                 if next_state.pacman in state.dots:
                     score += MINIMAX_COLLECTIBLE_REWARD
                 if next_state.pacman in state.power_pellets:
                     score += MINIMAX_POWER_PELLET_REWARD
             scores[action] = score
+            if MINIMAX_TIE_TOLERANCE > 0:
+                alpha = max(alpha, score - MINIMAX_TIE_TOLERANCE)
+            else:
+                alpha = max(alpha, score)
 
         self.last_scores = scores
         best_score = max(scores.values())
@@ -506,7 +536,7 @@ class MinimaxPlanner:
 
 
 class PacmanAI:
-    """Run one Minimax decision at each Pac-Man tile."""
+    """Run one Minimax Alpha-Beta decision at each Pac-Man tile."""
 
     def __init__(
         self,
@@ -555,7 +585,8 @@ class PacmanAI:
         self.last_decision_tile = tile
         if self.debug:
             print(
-                f"Minimax candidates={scores} "
-                f"nodes={self.minimax.nodes_visited} chosen={action}"
+                f"Minimax Alpha-Beta candidates={scores} "
+                f"nodes={self.minimax.nodes_visited} "
+                f"pruned={self.minimax.pruned_branches} chosen={action}"
             )
         return action
