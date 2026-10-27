@@ -1,4 +1,4 @@
-"""Plain Minimax decision-making for grid-based ghosts."""
+"""Minimax decision-making with Alpha-Beta Pruning for grid-based ghosts."""
 import random
 from math import ceil
 from typing import Dict, FrozenSet, Sequence, Tuple
@@ -30,7 +30,7 @@ DIRECTIONS: Tuple[Action, ...] = (
 
 
 class GhostMinimaxPlanner:
-    """Choose a ghost move against optimal Pac-Man responses using plain Minimax."""
+    """Choose a ghost move against optimal Pac-Man responses using Minimax with Alpha-Beta Pruning."""
 
     def __init__(
         self,
@@ -40,6 +40,8 @@ class GhostMinimaxPlanner:
         if depth < 1:
             raise ValueError("Minimax depth must be at least 1")
         self.depth = depth
+        self.nodes_visited = 0
+        self.pruned_branches = 0
         self.last_scores: Dict[Action, float] = {}
         self._random = random.Random(random_seed)
 
@@ -134,7 +136,10 @@ class GhostMinimaxPlanner:
         ghost_turn: bool,
         power_ticks_remaining: int,
         ghost_speed: float,
+        alpha: float = float("-inf"),
+        beta: float = float("inf"),
     ) -> float:
+        self.nodes_visited += 1
         if remaining_depth == 0:
             return self._evaluate(
                 maze,
@@ -189,8 +194,14 @@ class GhostMinimaxPlanner:
                         False,
                         next_power_ticks,
                         ghost_speed,
+                        alpha,
+                        beta,
                     )
                 best_score = max(best_score, score)
+                alpha = max(alpha, best_score)
+                if beta <= alpha:
+                    self.pruned_branches += 1
+                    break
             return best_score
 
         actions = self._legal_actions(
@@ -242,8 +253,14 @@ class GhostMinimaxPlanner:
                     True,
                     next_power_ticks,
                     ghost_speed,
+                    alpha,
+                    beta,
                 )
             worst_score = min(worst_score, score)
+            beta = min(beta, worst_score)
+            if beta <= alpha:
+                self.pruned_branches += 1
+                break
         return worst_score
 
     def choose_action(
@@ -259,7 +276,7 @@ class GhostMinimaxPlanner:
         ghost_speed: float = GHOST_SPEED,
         pacman_direction: Action = Direction.NONE,
     ) -> Action:
-        """Return the best legal first ghost move, or NONE when it is trapped."""
+        """Return the best legal first ghost move using Alpha-Beta Pruning."""
         actions = self._legal_actions(
             maze,
             ghost,
@@ -279,7 +296,12 @@ class GhostMinimaxPlanner:
             if power_ticks_remaining > 0
             else POWER_PELLET_DURATION if power_active else 0
         )
+        self.nodes_visited = 0
+        self.pruned_branches = 0
         self.last_scores = {}
+        alpha = float("-inf")
+        beta = float("inf")
+
         for action in actions:
             next_ghost = (ghost[0] + action[0], ghost[1] + action[1])
             next_power_ticks = max(
@@ -303,8 +325,14 @@ class GhostMinimaxPlanner:
                     False,
                     next_power_ticks,
                     ghost_speed,
+                    alpha,
+                    beta,
                 )
             self.last_scores[action] = score
+            if GHOST_MINIMAX_TIE_TOLERANCE > 0:
+                alpha = max(alpha, score - GHOST_MINIMAX_TIE_TOLERANCE)
+            else:
+                alpha = max(alpha, score)
 
         best_score = max(self.last_scores.values())
         best_actions = [

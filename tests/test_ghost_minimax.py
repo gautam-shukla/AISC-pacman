@@ -304,3 +304,25 @@ def test_last_remaining_life_is_scored_as_game_over():
     )
 
     assert planner.last_scores[Direction.RIGHT] == 2000.0
+
+
+def test_ghost_minimax_alpha_beta_pruning_tracks_pruned_branches():
+    maze = Maze(
+        [
+            "#######",
+            "#.....#",
+            "#.###.#",
+            "#.....#",
+            "#######",
+        ]
+    )
+    planner = GhostMinimaxPlanner(depth=4)
+    action = planner.choose_action(
+        maze,
+        pacman=(3, 3),
+        ghost=(1, 1),
+        ghost_direction=Direction.RIGHT,
+    )
+    assert action in (Direction.RIGHT, Direction.DOWN)
+    assert planner.nodes_visited > 0
+    assert hasattr(planner, "pruned_branches")

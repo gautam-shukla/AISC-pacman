@@ -1,4 +1,4 @@
-"""Tests for autonomous Pac-Man's plain Minimax planner."""
+"""Tests for autonomous Pac-Man's Minimax with Alpha-Beta Pruning planner."""
 
 from game_state import GameState
 from ghost import Ghost
@@ -8,11 +8,12 @@ from pacman_ai import MinimaxPlanner, PacmanAI, SearchState
 from settings import Direction, MINIMAX_GHOST_COLLISION_PENALTY, TILE_SIZE
 
 
-def test_minimax_uses_configurable_depth_without_pruning():
+def test_minimax_uses_configurable_depth_with_alpha_beta_pruning():
     planner = MinimaxPlanner(depth=5)
 
     assert planner.depth == 5
-    assert not hasattr(planner, "pruned_branches")
+    assert hasattr(planner, "pruned_branches")
+    assert planner.pruned_branches == 0
 
 
 def test_seeded_minimax_randomizes_only_equal_candidates_reproducibly():
@@ -265,3 +266,4 @@ def test_minimax_depth_six_is_responsive_on_the_default_maze():
 
     assert action in scores
     assert planner.nodes_visited < 100_000
+    assert planner.pruned_branches > 0
